@@ -31,7 +31,8 @@ decimated aligned points with nullable unvoiced values and per-source confidence
 The visualization response also contains raw discrepancies, grouped practice
 targets, canonical/reference/microphone playback mappings, the saved playback
 override, calibrated synchronization diagnostics, and original plus shifted
-reference pitch contours.
+reference pitch contours. `transport.mapping_quality` reports half-second local
+rate bounds and whether full-alignment playback is safe.
 
 The scoring endpoint recomputes the four scoring views and key-adjusted practice
 targets from existing pitch/alignment artifacts. Omitting `shift` returns the gated

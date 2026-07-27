@@ -25,6 +25,7 @@ Last updated: 2026-07-26
 - [x] Show original, shifted-reference, and user pitch contours
 - [x] Separate click-to-seek from intentional loop creation and edge resizing
 - [x] Separate active reference provenance from next-rebuild settings
+- [x] Bound unequal-length alignment to shared overlap and guard playback rates
 - [ ] Complete the private take's browser listening and 20-loop manual checks
 
 Automated and metadata validation is complete; private browser listening remains open.

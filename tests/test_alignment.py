@@ -29,6 +29,25 @@ class AlignmentTests(unittest.TestCase):
         self.assertTrue(np.all(np.diff(alignment.user_indices) >= 0))
         self.assertGreater(alignment.confidence, 0.5)
 
+    def test_partial_reference_aligns_only_shared_overlap(self) -> None:
+        reference = np.sin(np.linspace(0, 20, 450))
+        user = np.concatenate(
+            [
+                np.zeros(30),
+                reference,
+                np.cos(np.linspace(0, 20, 550)),
+            ]
+        )
+        alignment = constrained_alignment(
+            reference,
+            user,
+            hop_seconds=0.01,
+            global_offset_seconds=0.3,
+        )
+        self.assertEqual(alignment.reference_indices[-1], 449)
+        self.assertGreater(alignment.user_indices[-1], 450)
+        self.assertLessEqual(alignment.user_indices[-1], 480)
+
     def test_microphone_latency_ignores_global_transposition(self) -> None:
         reference = np.repeat([60.0, 64.0, 62.0, 67.0, 65.0], 40)
         user = np.concatenate([np.full(100, np.nan), reference + 3])

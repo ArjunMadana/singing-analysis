@@ -125,6 +125,10 @@ class ApiWorkflowTests(unittest.TestCase):
                 self.assertTrue(
                     view.json()["transport"]["mapping"]["canonical_time"]
                 )
+                self.assertIn(
+                    "full_alignment_safe",
+                    view.json()["transport"]["mapping_quality"],
+                )
                 self.assertIn("practice_targets", view.json())
                 before_scoring = take_payload["analysis"]
                 manual_scoring = client.get(

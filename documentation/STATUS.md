@@ -58,6 +58,8 @@ because no controllable browser was available in this session.
 - Project-scoped recording-import drafts with fresh-import reset and an explicit
   Choose different recording action
 - Generation-safe asynchronous audio loading and replay-from-end scheduling guards
+- Shared-overlap alignment for unequal recording lengths, canonical waveform
+  remapping, and bounded full-alignment playback rates
 
 ## Degraded behavior
 
@@ -87,15 +89,15 @@ because no controllable browser was available in this session.
 
 ## Verified state
 
-- 37 Python tests pass.
-- 23 frontend transport/state/gesture/import-lifecycle tests pass.
+- 40 Python tests pass.
+- 25 frontend transport/state/gesture/import-lifecycle tests pass.
 - Frontend production build and ESLint pass.
 - A bounded launch check returned HTTP 200 from both the local API and UI.
 - A synthetic microphone delayed by approximately one second was corrected before
   pitch comparison, and its loop range mapped to the delayed take timeline.
-- The private take was reanalyzed without modifying its recording or rebuilding its
-  baseline: baseline v7 reused; Demucs 4.1.0/htdemucs/CUDA provenance retained;
-  extraction, reference extraction, user pitch, and baseline caches all hit.
+- Vienna source recordings remain unmodified, and baseline versions 1-10 remain
+  available. The current take-1 analysis uses Demucs baseline v8; take 2 uses the
+  new full-length Demucs baseline v10.
 - Its former -6-semitone result was rejected as an unsupported midpoint. The
   strongest candidate is 0 st at 18.7% support, runner-up -12 st, with only a
   4.5-point support margin, so detection is correctly marked uncertain.
@@ -107,3 +109,6 @@ because no controllable browser was available in this session.
 - The newest Test take serves both 102.25-second WAV artifacts with valid RIFF
   headers and HTTP 200 responses; its 2,549-point canonical/reference/user mapping
   spans the take.
+- Vienna take 2 was rebuilt as preserved baseline v10 with
+  Demucs 4.1.0/htdemucs/CUDA. Its full 101.94-second canonical mapping is safe
+  across 204 half-second windows, with both source rates effectively 1.0x.

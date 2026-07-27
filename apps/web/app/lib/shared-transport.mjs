@@ -1,5 +1,15 @@
 const LOOKAHEAD_SECONDS = 0.06;
 const SEGMENT_SECONDS = 0.5;
+const MINIMUM_FULL_ALIGNMENT_RATE = 0.67;
+const MAXIMUM_FULL_ALIGNMENT_RATE = 1.5;
+
+export function safeFullAlignmentRate(rate) {
+  return (
+    Number.isFinite(rate) &&
+    rate >= MINIMUM_FULL_ALIGNMENT_RATE &&
+    rate <= MAXIMUM_FULL_ALIGNMENT_RATE
+  );
+}
 
 export function interpolateMapping(mapping, canonicalSeconds, sourceKey) {
   const canonical = mapping?.canonical_time ?? [];
@@ -40,6 +50,46 @@ export function mappedSourceTime(
     interpolateMapping(mapping, canonicalSeconds, "user_time") +
     manualOffsetSeconds
   );
+}
+
+export function canonicalTimeForSource(mapping, sourceSeconds, sourceKey) {
+  const canonical = mapping?.canonical_time ?? [];
+  const values = mapping?.[sourceKey] ?? [];
+  if (!canonical.length || canonical.length !== values.length) return sourceSeconds;
+  if (sourceSeconds <= values[0]) return canonical[0] + sourceSeconds - values[0];
+  const last = values.length - 1;
+  if (sourceSeconds >= values[last]) {
+    return canonical[last] + sourceSeconds - values[last];
+  }
+  let low = 0;
+  let high = last;
+  while (high - low > 1) {
+    const middle = Math.floor((low + high) / 2);
+    if (values[middle] <= sourceSeconds) low = middle;
+    else high = middle;
+  }
+  const span = values[high] - values[low];
+  const ratio = span ? (sourceSeconds - values[low]) / span : 0;
+  return canonical[low] + ratio * (canonical[high] - canonical[low]);
+}
+
+export function mapWaveformToCanonical(waveform, mapping, sourceKey) {
+  const sourceTimes = mapping?.[sourceKey] ?? [];
+  const canonical = mapping?.canonical_time ?? [];
+  if (!sourceTimes.length || sourceTimes.length !== canonical.length) return waveform;
+  const minimumSource = sourceTimes[0];
+  const maximumSource = sourceTimes.at(-1);
+  const selected = waveform.time
+    .map((time, index) => ({ time, index }))
+    .filter(({ time }) => time >= minimumSource && time <= maximumSource);
+  return {
+    time: selected.map(({ time }) =>
+      canonicalTimeForSource(mapping, time, sourceKey)
+    ),
+    minimum: selected.map(({ index }) => waveform.minimum[index]),
+    maximum: selected.map(({ index }) => waveform.maximum[index]),
+    duration: canonical.at(-1) ?? waveform.duration,
+  };
 }
 
 export function mappedWindow(options, start, end) {
@@ -374,6 +424,15 @@ export class SharedAudioTransport {
     const scheduledSources = new Set();
     try {
       for (const segment of schedule) {
+        if (
+          this.options.mode === "full" &&
+          !safeFullAlignmentRate(segment.playbackRate)
+        ) {
+          throw new Error(
+            "Full alignment requires an unsafe local playback speed. " +
+            "Use Constant offset corrected playback.",
+          );
+        }
         const buffer = this.buffers[segment.source];
         const sourceStart = Math.max(0, segment.sourceStart);
         const sourceEnd = Math.min(buffer.duration, segment.sourceEnd);

@@ -12,7 +12,7 @@ python -m compileall -q src tests
 python -m unittest discover -s tests -v
 ```
 
-Result: **37 tests passed**.
+Result: **40 tests passed**.
 
 Coverage includes:
 
@@ -40,6 +40,7 @@ Coverage includes:
 - static HTML report generation and alignment-aware looping.
 - manual scoring API behavior and proof that it does not rewrite stored analysis;
 - mode-compatible take comparisons.
+- unequal-length partial-overlap alignment and playback-mapping safety evaluation.
 
 The integrated API workflow generates two noncopyrighted MKV takes, detects the
 known pitch relationship, reuses the active baseline, creates baseline version 2,
@@ -55,7 +56,7 @@ npm.cmd --prefix apps/web run lint
 ```
 
 `npm test` performs a production Vinext/Vite build and then runs the frontend
-state tests. Result: **23 tests passed**, build passed, and ESLint passed.
+state tests. Result: **25 tests passed**, build passed, and ESLint passed.
 
 The tests cover the earlier state behavior plus shared scheduled starts, source
 readiness, constant and nonlinear mapping, 20 loop epochs without accumulated
@@ -64,7 +65,9 @@ recreation, rapid target switching, click-to-seek, click-sized loop rejection,
 intentional loop creation, loop-edge adjustment, project-scoped import drafts, and
 clearing an inspected recording to choose another file. It also proves that late
 loads from a disposed transport cannot overwrite active readiness and that Play at
-the canonical endpoint rewinds and schedules real source nodes.
+the canonical endpoint rewinds and schedules real source nodes. Partial waveforms
+are cropped and inverse-mapped to canonical time, while full-alignment rates outside
+0.67x-1.5x are rejected.
 
 The newest local Test take was inspected directly through the API:
 
@@ -73,6 +76,29 @@ The newest local Test take was inspected directly through the API:
 - visualization returns 2,549 canonical/reference/user mapping points spanning
   approximately 0.02-101.94 s;
 - waveform summaries span the full 102.25-second take.
+
+## Unequal-length Vienna take
+
+Vienna take 1 covers approximately 45 seconds, while take 2 is 102.25 seconds and
+starts several seconds earlier. Reproducing take 2 against the take-1 baseline
+isolated the failure:
+
+- global synchronization correctly found +3.26 seconds;
+- constrained DTW then incorrectly forced the 45-second reference endpoint to the
+  102-second take endpoint;
+- 73.4% of pointwise mapping intervals fell outside 0.8x-1.25x;
+- observed local rates ranged from 0x to 90.5x, explaining the severely mangled
+  audio.
+
+After shared-overlap truncation, the same inputs map canonical 0.02-44.98 seconds to
+source 3.28-48.23 seconds. Across 90 half-second windows, rates are 0.72x-1.22x and
+the mapping passes the playback safety boundary.
+
+The existing Vienna take 2 was also rebuilt as new baseline v10 with Demucs
+4.1.0/htdemucs/CUDA; versions 1-9 remain available. The resulting full-length
+mapping covers canonical 0.02-101.94 seconds. Reference and user rates are
+effectively 1.0x in all 204 half-second windows, and
+`full_alignment_safe` is `true`.
 
 ## Private take metadata verification
 

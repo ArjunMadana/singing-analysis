@@ -52,6 +52,21 @@ export function mappedSourceTime(
   automaticLatencySeconds?: number,
   manualOffsetSeconds?: number,
 ): number;
+export function canonicalTimeForSource(
+  mapping: AlignmentMapping,
+  sourceSeconds: number,
+  sourceKey: "reference_time" | "user_time",
+): number;
+export function mapWaveformToCanonical<T extends {
+  time: number[];
+  minimum: number[];
+  maximum: number[];
+  duration: number;
+}>(
+  waveform: T,
+  mapping: AlignmentMapping,
+  sourceKey: "reference_time" | "user_time",
+): T;
 export function mappedWindow(
   options: TransportOptions,
   start: number,
@@ -70,6 +85,7 @@ export function transportDiagnostics(
 ): SharedTransportState["diagnostics"];
 export function requiredSources(mix: TransportMix): string[];
 export function sourcesReady(readiness: SourceReadiness, mix: TransportMix): boolean;
+export function safeFullAlignmentRate(rate: number): boolean;
 export class SharedAudioTransport {
   constructor(options?: {
     createContext?: () => AudioContext;

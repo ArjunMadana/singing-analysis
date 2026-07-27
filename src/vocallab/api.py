@@ -26,6 +26,7 @@ from vocallab.scoring import (
 from vocallab.separation import demucs_capability
 from vocallab.services import LibraryService, compare_analyses
 from vocallab.visualization import (
+    playback_mapping_quality,
     pitch_visualization,
     transport_mapping,
     waveform_summary,
@@ -245,6 +246,7 @@ def create_app(library_root: Path | None = None) -> FastAPI:
             ),
             "transport": {
                 "mapping": mapping,
+                "mapping_quality": playback_mapping_quality(mapping),
                 "manual_offset_seconds": float(
                     row.get("playback_offset_seconds") or 0.0
                 ),

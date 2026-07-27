@@ -15,6 +15,7 @@ import {
 } from "./lib/practice-state.mjs";
 import {
   SharedAudioTransport,
+  mapWaveformToCanonical,
   mappedSourceTime,
   transportDiagnostics,
 } from "./lib/shared-transport.mjs";
@@ -199,6 +200,9 @@ export function VocalLabApp() {
       request<{ notes: Note[]; versions: any[] }>(`/api/projects/${project.id}/baseline`),
     ])
       .then(([view, baseline]) => {
+        if (view.transport?.mapping_quality?.full_alignment_safe === false) {
+          setPlaybackMode((current) => current === "full" ? "constant" : current);
+        }
         setVisualization(view);
         const nextScoring = take.analysis.scoring ?? null;
         setScoringView(nextScoring);
@@ -234,6 +238,10 @@ export function VocalLabApp() {
     });
     transport.current = next;
     const savedOffset = visualization.transport.manual_offset_seconds ?? 0;
+    const fullAlignmentSafe =
+      visualization.transport.mapping_quality?.full_alignment_safe !== false;
+    const initialPlaybackMode =
+      playbackMode === "full" && !fullAlignmentSafe ? "constant" : playbackMode;
     next.setMix(mix);
     next.setVolumes(userVolume, referenceVolume);
     next.load(
@@ -243,7 +251,7 @@ export function VocalLabApp() {
       },
       {
         mapping: visualization.transport.mapping,
-        mode: playbackMode,
+        mode: initialPlaybackMode,
         automaticLatencySeconds:
           visualization.transport.diagnostics.microphone_latency_seconds ?? 0,
         manualOffsetSeconds: savedOffset,
@@ -300,7 +308,26 @@ export function VocalLabApp() {
     );
   }, [filter, visualization]);
 
-  const duration = visualization?.waveforms?.reference?.duration ?? 0;
+  const displayWaveforms = useMemo(() => {
+    if (!visualization?.waveforms || !visualization?.transport?.mapping) {
+      return visualization?.waveforms;
+    }
+    return {
+      reference: mapWaveformToCanonical(
+        visualization.waveforms.reference,
+        visualization.transport.mapping,
+        "reference_time",
+      ),
+      user: mapWaveformToCanonical(
+        visualization.waveforms.user,
+        visualization.transport.mapping,
+        "user_time",
+      ),
+    };
+  }, [visualization]);
+  const duration = displayWaveforms?.reference?.duration ?? 0;
+  const fullAlignmentSafe =
+    visualization?.transport?.mapping_quality?.full_alignment_safe !== false;
 
   const selectDiscrepancy = useCallback(
     (
@@ -688,7 +715,7 @@ export function VocalLabApp() {
                 <small>{timelineTool === "seek" ? "Click to move playback. This mode never creates a loop." : "Drag empty space to create a loop; drag either gold edge to resize it. A click does nothing."}</small>
               </div>
               <TimelineCanvas
-                waveforms={visualization.waveforms}
+                waveforms={displayWaveforms}
                 pitch={visualization.pitch}
                 notes={visualization.notes ?? notes}
                 cursor={cursor}
@@ -806,9 +833,18 @@ export function VocalLabApp() {
                   >
                     <option value="raw">Raw simultaneous</option>
                     <option value="constant">Constant offset corrected</option>
-                    <option value="full">Full alignment corrected</option>
+                    <option value="full" disabled={!fullAlignmentSafe}>
+                      Full alignment corrected
+                    </option>
                   </select>
                 </label>
+                {!fullAlignmentSafe && (
+                  <span className="confidence">
+                    Full alignment playback is disabled because the saved path
+                    requires unsafe speed changes. Constant correction preserves
+                    the audio.
+                  </span>
+                )}
                 <label className="manual-offset">
                   Diagnostic microphone offset {manualOffset >= 0 ? "+" : ""}{manualOffset.toFixed(2)}s
                   <input

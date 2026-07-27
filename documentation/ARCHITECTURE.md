@@ -53,6 +53,12 @@ method, matched coverage, and calibrated overall confidence remain in provenance
 The alignment artifact stores canonical baseline indices, current system-reference
 indices, and microphone indices after latency correction.
 
+After global offset establishes the overlapping start, constrained DTW truncates
+both inputs to their shared remaining length. This is essential when a short
+baseline excerpt is reused against a longer take: endpoint-to-endpoint DTW would
+otherwise stretch the excerpt over unrelated audio after it. Calibrated coverage
+continues to report how much of each recording actually participated.
+
 Browser playback uses `SharedAudioTransport`, not independent
 `HTMLAudioElement` clocks. It decodes both WAV artifacts into one `AudioContext`
 and schedules both sources at the same future context time. Canonical baseline
@@ -68,6 +74,13 @@ cannot overwrite the active transport's readiness. Playback validates that every
 selected source produced schedulable nodes. A cursor at or beyond the canonical
 mapping endpoint rewinds to zero before scheduling, avoiding a false playing state
 with no audio.
+
+The API evaluates each playback mapping in 0.5-second windows. Full local warping is
+available only when reference and user rates remain within 0.67x-1.5x throughout;
+the browser and scheduler both enforce this boundary. Unsafe saved paths fall back
+visibly to constant correction. Display waveforms are cropped to mapped source
+bounds and inverse-mapped into canonical time so waveform, pitch, cursor, and audio
+refer to the same overlap.
 
 Raw discrepancies remain precise analysis measurements. `PracticeTarget`
 construction associates them with baseline notes, groups compatible nearby

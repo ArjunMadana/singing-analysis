@@ -52,6 +52,11 @@ def constrained_alignment(
         return AlignmentResult(
             global_offset_seconds, np.array([], dtype=int), np.array([], dtype=int), 0.0, profile
         )
+    # Global offset establishes the overlapping start. DTW must operate only on
+    # that shared span: forcing unequal recording endpoints to match stretches a
+    # short excerpt across an entire longer take.
+    reference = reference[:common]
+    user = user[:common]
     # Downsampling bounds DTW memory and is recorded in the returned index path.
     stride = max(1, int(np.ceil(max(reference.size, user.size) / max_points)))
     reference = _normalize_feature(reference[::stride])

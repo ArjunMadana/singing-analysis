@@ -121,6 +121,60 @@ def transport_mapping(
     }
 
 
+def playback_mapping_quality(
+    mapping: dict[str, list[float]],
+    window_seconds: float = 0.5,
+    minimum_rate: float = 0.67,
+    maximum_rate: float = 1.5,
+) -> dict[str, Any]:
+    canonical = np.asarray(mapping.get("canonical_time", []), dtype=np.float64)
+    if canonical.size < 2 or canonical[-1] <= canonical[0]:
+        return {
+            "full_alignment_safe": False,
+            "reason": "insufficient canonical playback mapping",
+            "window_count": 0,
+        }
+    boundaries = np.append(
+        np.arange(canonical[0], canonical[-1], window_seconds),
+        canonical[-1],
+    )
+    if boundaries.size < 2:
+        boundaries = np.asarray([canonical[0], canonical[-1]])
+    source_quality: dict[str, Any] = {}
+    safe = True
+    for source in ("reference_time", "user_time"):
+        values = np.asarray(mapping.get(source, []), dtype=np.float64)
+        if values.size != canonical.size:
+            safe = False
+            source_quality[source] = {"status": "missing or mismatched mapping"}
+            continue
+        mapped = np.interp(boundaries, canonical, values)
+        rates = np.diff(mapped) / np.diff(boundaries)
+        unsafe = (
+            ~np.isfinite(rates)
+            | (rates < minimum_rate)
+            | (rates > maximum_rate)
+        )
+        safe = safe and not bool(np.any(unsafe))
+        source_quality[source] = {
+            "minimum_rate": float(np.min(rates)),
+            "maximum_rate": float(np.max(rates)),
+            "unsafe_window_percentage": float(100.0 * np.mean(unsafe)),
+        }
+    return {
+        "full_alignment_safe": safe,
+        "reason": (
+            "local playback rates are bounded"
+            if safe
+            else "alignment requires unsafe local playback speed"
+        ),
+        "window_count": int(boundaries.size - 1),
+        "minimum_allowed_rate": minimum_rate,
+        "maximum_allowed_rate": maximum_rate,
+        "sources": source_quality,
+    }
+
+
 def _nullable(values: np.ndarray) -> list[float | None]:
     return [float(value) if np.isfinite(value) else None for value in values]
 

@@ -13,7 +13,9 @@ import {
   SharedAudioTransport,
   buildSchedule,
   loopStartAt,
+  mapWaveformToCanonical,
   mappedSourceTime,
+  safeFullAlignmentRate,
   sourcesReady,
 } from "../app/lib/shared-transport.mjs";
 import { resolveTimelineGesture } from "../app/lib/timeline-interaction.mjs";
@@ -181,6 +183,38 @@ test("mapped seek applies constant latency and nonlinear local alignment", () =>
     Math.abs(mappedSourceTime(mapping, 1.5, "user", "full", 1, 0.2) - 2.825) <
       1e-12,
   );
+});
+
+test("partial-take waveforms are cropped and mapped to canonical time", () => {
+  const partialMapping = {
+    canonical_time: [0, 1, 2],
+    reference_time: [3, 4, 5],
+    user_time: [3.3, 4.3, 5.3],
+  };
+  const waveform = {
+    time: [0, 1, 2, 3, 4, 5, 6],
+    minimum: [-1, -2, -3, -4, -5, -6, -7],
+    maximum: [1, 2, 3, 4, 5, 6, 7],
+    duration: 7,
+  };
+  assert.deepEqual(
+    mapWaveformToCanonical(waveform, partialMapping, "reference_time"),
+    {
+      time: [0, 1, 2],
+      minimum: [-4, -5, -6],
+      maximum: [4, 5, 6],
+      duration: 2,
+    },
+  );
+});
+
+test("full alignment rejects audio-mangling playback rates", () => {
+  assert.equal(safeFullAlignmentRate(1), true);
+  assert.equal(safeFullAlignmentRate(0.72), true);
+  assert.equal(safeFullAlignmentRate(1.22), true);
+  assert.equal(safeFullAlignmentRate(0), false);
+  assert.equal(safeFullAlignmentRate(2.2), false);
+  assert.equal(safeFullAlignmentRate(90.5), false);
 });
 
 test("twenty loop starts remain anchored without accumulated drift", () => {
