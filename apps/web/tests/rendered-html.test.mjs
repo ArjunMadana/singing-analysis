@@ -23,6 +23,21 @@ import {
   createInspectedImportDraft,
   importDraftForProject,
 } from "../app/lib/import-draft.mjs";
+import {
+  midiNoteLabel,
+  pitchAxisTicks,
+} from "../app/lib/music-display.mjs";
+
+test("pitch axis uses readable scientific note names and bounded spacing", () => {
+  assert.equal(midiNoteLabel(60), "C4");
+  assert.equal(midiNoteLabel(69), "A4");
+  assert.equal(midiNoteLabel(61), "C♯4");
+  const ticks = pitchAxisTicks(47, 73, 155);
+  assert.ok(ticks[0] >= 47);
+  assert.ok(ticks.at(-1) <= 73);
+  assert.ok(ticks.length >= 8);
+  assert.ok(ticks.length <= 14);
+});
 
 test("normalizes loop selection and keeps a useful minimum", () => {
   assert.deepEqual(normalizeLoop(4, 2, 10), { start: 2, end: 4 });

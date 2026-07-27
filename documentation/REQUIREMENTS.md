@@ -16,7 +16,9 @@ Last updated: 2026-07-26
 9. Transposition searches every integer semitone from -12 through +12 and reports
    the runner-up, confidence margin, evidence support, and octave decomposition.
    Candidate selection must prefer actual frame support over a lower median error;
-   it must never invent a midpoint between incompatible pitch clusters.
+   it must never invent a midpoint between incompatible pitch clusters. Reliability
+   gates are dataset-independent safety boundaries and must not be weakened to make
+   a take pass.
 10. Feedback states acoustic measurements and confidence; it does not diagnose vocal
     technique or health.
 11. Reports are local static artifacts and do not upload or redistribute audio.
@@ -74,6 +76,8 @@ The integrated local browser application must preserve the Phase 1 boundary and:
 19. Reference and user contours in one analysis must use the same TorchCREPE
     algorithm. Activating a legacy baseline must create a new immutable baseline
     version by re-pitching its preserved vocal artifact before scoring.
+20. The pitch graph must show readable scientific-pitch note labels on its left
+    axis. Label density must adapt to the visible range rather than overlap.
 
 Desktop packaging and an advanced direct-manipulation piano roll remain later
 milestones.

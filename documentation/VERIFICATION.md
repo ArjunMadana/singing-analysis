@@ -11,7 +11,7 @@ python -m compileall -q src tests
 python -m pytest
 ```
 
-Result: **38 tests passed**.
+Result: **39 tests passed**.
 
 Coverage includes:
 
@@ -55,7 +55,7 @@ npm.cmd --prefix apps/web run lint
 ```
 
 `npm test` performs a production Vinext/Vite build and then runs the frontend
-state tests. Result: **26 tests passed**, build passed, and ESLint passed.
+state tests. Result: **27 tests passed**, build passed, and ESLint passed.
 
 The tests cover the earlier state behavior plus shared scheduled starts, source
 readiness, constant and nonlinear mapping, 20 loop epochs without accumulated
@@ -68,6 +68,9 @@ the canonical endpoint rewinds and schedules real source nodes. It also proves t
 the scheduler ignores nonlinear mapping data, schedules continuous 1.0x source
 audio, and maps waveforms through the same constant offsets. No variable-rate
 playback mode remains.
+
+The pitch-axis test also verifies scientific pitch labels (`C4`, `C♯4`, `A4`) and
+adaptive tick density for a wide visible range.
 
 Before removing local warping, both local Test takes were inspected directly:
 
@@ -249,6 +252,14 @@ Vienna was migrated the same way from baseline v10 to v11. Take 1 reports a
 1262.3-cent original-pitch median and 34.0% support for -12 semitones; take 2
 reports 1186.4 cents and 43.4%. Both remain below the reliability gate. All source
 recordings and baseline versions 1-10 remain unchanged.
+
+The retained autocorrelation cache allowed a same-audio tracker comparison. Across
+the matched reference and microphone artifacts, the two trackers agree within 50
+cents after octave wrapping on 92.0%-97.0% of mutually voiced frames, but direct
+absolute-octave agreement is only 0.0%-8.9%. Median old-minus-new displacement is
+about +12 semitones for the reference and +24 for the microphone. This is strong
+evidence that the former method tracked harmonics; it is not a labeled-ground-truth
+accuracy percentage for TorchCREPE.
 
 ## Limitations of verification
 

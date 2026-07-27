@@ -35,6 +35,14 @@ class TranspositionTests(unittest.TestCase):
         self.assertFalse(result.reliable)
         self.assertEqual(result.support_margin_percentage, 0)
 
+    def test_strongest_incoherent_cluster_stays_below_reliability_gate(self) -> None:
+        reference = np.full(10, 60.0)
+        user = np.asarray([55.0] * 4 + [60.0] * 3 + [48.0] * 3)
+        result = detect_transposition(reference, user)
+        self.assertEqual(result.best_shift, -5)
+        self.assertEqual(result.support_percentage, 40.0)
+        self.assertFalse(result.reliable)
+
     def test_coherent_shift_is_reliable(self) -> None:
         reference = np.array([60, 62, 64, 65, 67], dtype=float)
         result = detect_transposition(reference, reference - 6)

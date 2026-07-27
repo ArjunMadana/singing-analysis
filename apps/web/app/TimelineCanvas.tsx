@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { midiNoteLabel, pitchAxisTicks } from "./lib/music-display.mjs";
 import { resolveTimelineGesture } from "./lib/timeline-interaction.mjs";
+
+const PITCH_AXIS_WIDTH = 48;
 
 type Waveform = {
   time: number[];
@@ -85,7 +88,51 @@ export function TimelineCanvas({
     context.fillStyle = "#0d151c";
     context.fillRect(0, 0, width, height);
 
-    const x = (time: number) => ((time - start) / (end - start)) * width;
+    const shiftedReference = pitch.reference_midi.map((value) =>
+      value === null ? null : value + selectedShift
+    );
+    const visiblePitch = [
+      ...(showOriginal ? pitch.reference_midi : []),
+      ...(showShifted ? shiftedReference : []),
+      ...(showUser ? pitch.user_midi : []),
+    ];
+    const values = visiblePitch.filter(
+      (value): value is number => value !== null,
+    );
+    const low = values.length ? Math.floor(Math.min(...values) - 2) : 48;
+    const high = values.length ? Math.ceil(Math.max(...values) + 2) : 72;
+    const pitchHeight = 155;
+    const pitchBottom = height - 22;
+    const pitchTop = pitchBottom - pitchHeight;
+    const pitchY = (midi: number) =>
+      pitchBottom - ((midi - low) / (high - low)) * pitchHeight;
+    const plotWidth = Math.max(1, width - PITCH_AXIS_WIDTH);
+    const x = (time: number) =>
+      PITCH_AXIS_WIDTH + ((time - start) / (end - start)) * plotWidth;
+
+    context.fillStyle = "#101b23";
+    context.fillRect(0, pitchTop, PITCH_AXIS_WIDTH, pitchHeight);
+    context.font = "10px ui-monospace";
+    context.textAlign = "right";
+    context.textBaseline = "middle";
+    pitchAxisTicks(low, high, pitchHeight).forEach((midi) => {
+      const y = pitchY(midi);
+      context.strokeStyle = midi % 12 === 0 ? "#314652" : "#21333d";
+      context.beginPath();
+      context.moveTo(PITCH_AXIS_WIDTH, y);
+      context.lineTo(width, y);
+      context.stroke();
+      context.fillStyle = midi % 12 === 0 ? "#adc4cf" : "#728894";
+      context.fillText(midiNoteLabel(midi), PITCH_AXIS_WIDTH - 6, y);
+    });
+    context.textAlign = "left";
+    context.textBaseline = "alphabetic";
+    context.strokeStyle = "#314652";
+    context.beginPath();
+    context.moveTo(PITCH_AXIS_WIDTH, pitchTop);
+    context.lineTo(PITCH_AXIS_WIDTH, pitchBottom);
+    context.stroke();
+
     for (let second = Math.ceil(start); second <= end; second += 1) {
       context.strokeStyle = second % 5 === 0 ? "#263844" : "#192933";
       context.beginPath();
@@ -118,21 +165,6 @@ export function TimelineCanvas({
     };
     drawWave(waveforms.reference, 58, "#63b6d2");
     drawWave(waveforms.user, 125, "#e9a05f");
-
-    const shiftedReference = pitch.reference_midi.map((value) =>
-      value === null ? null : value + selectedShift
-    );
-    const visiblePitch = [
-      ...(showOriginal ? pitch.reference_midi : []),
-      ...(showShifted ? shiftedReference : []),
-      ...(showUser ? pitch.user_midi : []),
-    ];
-    const values = visiblePitch.filter(
-      (value): value is number => value !== null,
-    );
-    const low = values.length ? Math.min(...values) - 2 : 48;
-    const high = values.length ? Math.max(...values) + 2 : 72;
-    const pitchY = (midi: number) => height - 22 - ((midi - low) / (high - low)) * 155;
 
     notes.forEach((note) => {
       if (note.end_seconds < start || note.start_seconds > end) return;
@@ -226,7 +258,12 @@ export function TimelineCanvas({
 
   const timeAt = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    return start + ((event.clientX - rect.left) / rect.width) * (end - start);
+    const plotWidth = Math.max(1, rect.width - PITCH_AXIS_WIDTH);
+    const fraction = Math.min(
+      1,
+      Math.max(0, (event.clientX - rect.left - PITCH_AXIS_WIDTH) / plotWidth),
+    );
+    return start + fraction * (end - start);
   };
 
   return (
@@ -238,7 +275,9 @@ export function TimelineCanvas({
         const rect = event.currentTarget.getBoundingClientRect();
         const pointerX = event.clientX - rect.left;
         const xForTime = (time: number) =>
-          ((time - start) / (end - start)) * rect.width;
+          PITCH_AXIS_WIDTH +
+          ((time - start) / (end - start)) *
+            Math.max(1, rect.width - PITCH_AXIS_WIDTH);
         let handle: "start" | "end" | null = null;
         if (tool === "loop" && loop) {
           if (Math.abs(pointerX - xForTime(loop.start)) <= 10) handle = "start";

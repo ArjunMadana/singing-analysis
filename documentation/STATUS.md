@@ -69,6 +69,8 @@ reporting.
 - Explicit pitch capability/install status with no autocorrelation or pYIN fallback
 - Immutable migration of legacy baselines by re-pitching their preserved vocal stem
   without rerunning separation
+- Adaptive scientific-pitch labels and semitone guide lines on the timeline's left
+  pitch axis
 
 ## Degraded behavior
 
@@ -101,8 +103,8 @@ reporting.
 
 ## Verified state
 
-- 38 Python tests pass.
-- 26 frontend transport/state/gesture/import-lifecycle tests pass.
+- 39 Python tests pass.
+- 27 frontend transport/state/gesture/import-lifecycle/pitch-axis tests pass.
 - Frontend production build and ESLint pass.
 - A bounded launch check returned HTTP 200 from both the local API and UI.
 - A synthetic microphone delayed by approximately one second was corrected before
@@ -131,3 +133,9 @@ reporting.
 - The Test takes no longer report an identical support value: their strongest
   -12-semitone candidates have 43.8% and 40.5% support. Both remain below the
   reliability gate, so the UI correctly treats the detected key as uncertain.
+- On exact matching cached audio, autocorrelation and TorchCREPE agree within 50
+  cents after octave wrapping on 92.0%-97.0% of mutually voiced frames, but agree
+  on the absolute octave on only 0.0%-8.9%. The old tracker usually placed the
+  reference roughly one octave and the microphone roughly two octaves above
+  TorchCREPE, demonstrating that the upgrade corrects a material harmonic-tracking
+  failure rather than merely changing presentation.
