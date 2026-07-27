@@ -15,7 +15,6 @@ import {
   loopStartAt,
   mapWaveformToCanonical,
   mappedSourceTime,
-  safeFullAlignmentRate,
   sourcesReady,
 } from "../app/lib/shared-transport.mjs";
 import { resolveTimelineGesture } from "../app/lib/timeline-interaction.mjs";
@@ -151,7 +150,8 @@ test("shared schedule starts enabled sources on the same audio clock", () => {
   const schedule = buildSchedule(
     {
       mapping,
-      mode: "full",
+      mode: "constant",
+      systemOffsetSeconds: 0.1,
       automaticLatencySeconds: 1,
       manualOffsetSeconds: 0,
     },
@@ -173,16 +173,13 @@ test("source readiness follows the selected mix", () => {
   assert.equal(sourcesReady(readiness, "reference"), false);
 });
 
-test("mapped seek applies constant latency and nonlinear local alignment", () => {
-  assert.equal(mappedSourceTime(mapping, 1.5, "reference", "full"), 1.6);
+test("mapped seek applies only constant system and microphone offsets", () => {
+  assert.equal(mappedSourceTime(mapping, 1.5, "reference", "raw", 0, 0, 0.1), 1.6);
   assert.ok(
-    Math.abs(mappedSourceTime(mapping, 1.5, "user", "constant", 1, 0.2) - 2.8) <
+    Math.abs(mappedSourceTime(mapping, 1.5, "user", "constant", 1, 0.2, 0.1) - 2.8) <
       1e-12,
   );
-  assert.ok(
-    Math.abs(mappedSourceTime(mapping, 1.5, "user", "full", 1, 0.2) - 2.825) <
-      1e-12,
-  );
+  assert.equal(mappedSourceTime(mapping, 1.5, "user", "raw", 1, 0.2, 0.1), 1.6);
 });
 
 test("partial-take waveforms are cropped and mapped to canonical time", () => {
@@ -198,7 +195,13 @@ test("partial-take waveforms are cropped and mapped to canonical time", () => {
     duration: 7,
   };
   assert.deepEqual(
-    mapWaveformToCanonical(waveform, partialMapping, "reference_time"),
+    mapWaveformToCanonical(
+      waveform,
+      partialMapping,
+      "reference_time",
+      "constant",
+      3,
+    ),
     {
       time: [0, 1, 2],
       minimum: [-4, -5, -6],
@@ -208,13 +211,46 @@ test("partial-take waveforms are cropped and mapped to canonical time", () => {
   );
 });
 
-test("full alignment rejects audio-mangling playback rates", () => {
-  assert.equal(safeFullAlignmentRate(1), true);
-  assert.equal(safeFullAlignmentRate(0.72), true);
-  assert.equal(safeFullAlignmentRate(1.22), true);
-  assert.equal(safeFullAlignmentRate(0), false);
-  assert.equal(safeFullAlignmentRate(2.2), false);
-  assert.equal(safeFullAlignmentRate(90.5), false);
+test("constant-corrected waveform ignores nonlinear mapping data like its audio", () => {
+  const jitteredMapping = {
+    canonical_time: [0, 1, 2],
+    reference_time: [3, 4.2, 5],
+    user_time: [3.3, 4.5, 5.3],
+  };
+  const waveform = {
+    time: [3, 4, 5],
+    minimum: [-1, -2, -3],
+    maximum: [1, 2, 3],
+    duration: 6,
+  };
+  assert.deepEqual(
+    mapWaveformToCanonical(
+      waveform,
+      jitteredMapping,
+      "reference_time",
+      "constant",
+      3,
+    ).time,
+    [0, 1, 2],
+  );
+});
+
+test("constant correction always preserves 1x playback", () => {
+  const schedule = buildSchedule(
+    {
+      mapping,
+      mode: "constant",
+      systemOffsetSeconds: 0.1,
+      automaticLatencySeconds: 1,
+      manualOffsetSeconds: 0.2,
+    },
+    1,
+    2,
+    10,
+  );
+  assert.ok(schedule.every((segment) => segment.playbackRate === 1));
+  assert.equal(schedule[0].sourceStart, 1.1);
+  assert.ok(Math.abs(schedule[1].sourceStart - 2.3) < 1e-12);
 });
 
 test("twenty loop starts remain anchored without accumulated drift", () => {
@@ -263,7 +299,7 @@ test("failed reference never enables Both but User-only remains available", asyn
   });
   await transport.load(
     { user: "/user.wav", reference: "/reference.wav" },
-    { mapping, mode: "full", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
+    { mapping, mode: "constant", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
   );
   assert.equal(transport.state().canPlay, false);
   transport.setMix("user");
@@ -300,7 +336,7 @@ test("pause and resume recreate sources from one canonical cursor", async () => 
   });
   await transport.load(
     { user: "/user.wav", reference: "/reference.wav" },
-    { mapping, mode: "full", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
+    { mapping, mode: "constant", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
   );
   await transport.play();
   const firstSourceCount = context.starts.length;
@@ -326,7 +362,7 @@ test("gain changes do not reschedule or desynchronize active sources", async () 
   });
   await transport.load(
     { user: "/user.wav", reference: "/reference.wav" },
-    { mapping, mode: "full", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
+    { mapping, mode: "constant", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
   );
   await transport.play();
   const starts = context.starts.map((entry) => entry[0]);
@@ -358,7 +394,7 @@ test("disposed transports cannot overwrite readiness after a project switch", as
   });
   const loading = transport.load(
     { user: "/user.wav", reference: "/reference.wav" },
-    { mapping, mode: "full", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
+    { mapping, mode: "constant", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
   );
   await Promise.resolve();
   const emissionCount = emitted.length;
@@ -384,7 +420,7 @@ test("play at the canonical end restarts instead of scheduling silence", async (
   });
   await transport.load(
     { user: "/user.wav", reference: "/reference.wav" },
-    { mapping, mode: "full", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
+    { mapping, mode: "constant", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
   );
   transport.cursor = mapping.canonical_time.at(-1);
   await transport.play();

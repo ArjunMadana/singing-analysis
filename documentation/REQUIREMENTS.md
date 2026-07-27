@@ -30,7 +30,8 @@ The integrated local browser application must preserve the Phase 1 boundary and:
 1. Decode every enabled playback source before enabling Play.
 2. Schedule all enabled sources on one Web Audio clock.
 3. Treat baseline/reference time as canonical and map reference and microphone
-   offsets independently through saved alignment evidence.
+   offsets independently using one global song-start shift and one constant
+   microphone-device latency. Never apply a local time-warp curve.
    When recordings have different lengths, align only their shared span after the
    detected global offset; never force unequal endpoints to match.
 4. Stop and recreate source nodes atomically for pause, seek, loop, or target
@@ -63,10 +64,10 @@ The integrated local browser application must preserve the Phase 1 boundary and:
     confirmation step must let the user choose a different recording.
 17. Play at or beyond the canonical mapping endpoint must restart from the
     beginning. The UI must never claim playback while scheduling zero source nodes.
-18. Full-alignment playback may use local rates only from 0.67x through 1.5x.
-    Unsafe paths must disable that mode and preserve audio through constant-offset
-    playback. Waveforms must be cropped and mapped onto the same canonical overlap
-    used by audio and pitch.
+18. Playback must preserve recorded pitch. Corrected playback maps canonical time
+    through the measured system-reference and microphone offsets while keeping both
+    sources at exactly 1.0x. No variable-rate playback mode is permitted. Waveforms
+    must use the same active timestamp offsets as the audio and pitch.
 
 Desktop packaging and an advanced direct-manipulation piano roll remain later
 milestones.

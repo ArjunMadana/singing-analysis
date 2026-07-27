@@ -3,11 +3,12 @@ export type AlignmentMapping = {
   reference_time: number[];
   user_time: number[];
 };
-export type TransportMode = "raw" | "constant" | "full";
+export type TransportMode = "raw" | "constant";
 export type TransportMix = "user" | "reference" | "both";
 export type TransportOptions = {
   mapping: AlignmentMapping;
   mode: TransportMode;
+  systemOffsetSeconds: number;
   automaticLatencySeconds: number;
   manualOffsetSeconds: number;
 };
@@ -26,7 +27,6 @@ export type SharedTransportState = {
   diagnostics: {
     referenceTime: number;
     userTime: number;
-    localCorrection: number;
     totalEffectiveOffset: number;
   };
 };
@@ -39,11 +39,6 @@ export type ScheduleSegment = {
   sourceEnd: number;
   playbackRate: number;
 };
-export function interpolateMapping(
-  mapping: AlignmentMapping,
-  canonicalSeconds: number,
-  sourceKey: "reference_time" | "user_time",
-): number;
 export function mappedSourceTime(
   mapping: AlignmentMapping,
   canonicalSeconds: number,
@@ -51,11 +46,7 @@ export function mappedSourceTime(
   mode: TransportMode,
   automaticLatencySeconds?: number,
   manualOffsetSeconds?: number,
-): number;
-export function canonicalTimeForSource(
-  mapping: AlignmentMapping,
-  sourceSeconds: number,
-  sourceKey: "reference_time" | "user_time",
+  systemOffsetSeconds?: number,
 ): number;
 export function mapWaveformToCanonical<T extends {
   time: number[];
@@ -66,6 +57,10 @@ export function mapWaveformToCanonical<T extends {
   waveform: T,
   mapping: AlignmentMapping,
   sourceKey: "reference_time" | "user_time",
+  mode?: TransportMode,
+  systemOffsetSeconds?: number,
+  automaticLatencySeconds?: number,
+  manualOffsetSeconds?: number,
 ): T;
 export function mappedWindow(
   options: TransportOptions,
@@ -85,7 +80,6 @@ export function transportDiagnostics(
 ): SharedTransportState["diagnostics"];
 export function requiredSources(mix: TransportMix): string[];
 export function sourcesReady(readiness: SourceReadiness, mix: TransportMix): boolean;
-export function safeFullAlignmentRate(rate: number): boolean;
 export class SharedAudioTransport {
   constructor(options?: {
     createContext?: () => AudioContext;

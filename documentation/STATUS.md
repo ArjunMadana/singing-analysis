@@ -8,9 +8,10 @@ The private-recording correctness findings have been addressed in code. Scoring 
 separates original pitch, key-adjusted melody, octave-invariant melody, and
 interval/contour evidence. Transposition detection rejects unsupported compromise
 shifts, timeline clicks and loop drags are distinct, and active reference provenance
-is visually separate from the next rebuild method. The Vienna take was reanalyzed
-against its existing Demucs/CUDA baseline; final listening checks remain open
-because no controllable browser was available in this session.
+is visually separate from the next rebuild method. Synchronization and playback now
+use timestamp shifts only: one song-start offset and one microphone-device latency,
+with every source kept at 1.0x. The remaining listening check requires a
+controllable browser/audio session.
 
 ## Implemented
 
@@ -26,7 +27,7 @@ because no controllable browser was available in this session.
 - Canvas waveform, pitch, confidence, and baseline-note timeline
 - Shared-clock Web Audio playback with decoded-source readiness, atomic scheduling,
   GainNodes, and User/Reference/Both presets
-- Raw, constant-offset, and full-alignment playback modes
+- Raw simultaneous and pitch-preserving constant-offset playback modes
 - Per-take diagnostic offset with explicit save and a -2 to +2 second range
 - Advanced synchronization diagnostics with pitch and energy latency candidates
 - Drift-free loop epoch scheduling and separately mapped source boundaries
@@ -58,12 +59,18 @@ because no controllable browser was available in this session.
 - Project-scoped recording-import drafts with fresh-import reset and an explicit
   Choose different recording action
 - Generation-safe asynchronous audio loading and replay-from-end scheduling guards
-- Shared-overlap alignment for unequal recording lengths, canonical waveform
-  remapping, and bounded full-alignment playback rates
+- One-to-one shared-span alignment for unequal recording lengths and
+  mode-consistent waveform timestamp shifts
+- Original-pitch frame error labeled separately from detected key difference
 
 ## Degraded behavior
 
 - The deterministic autocorrelation tracker remains the active pitch engine.
+- Similar original-pitch medians can be dominated by a shared octave-tracking
+  displacement. The Test evidence contains incompatible clusters near both 0 and
+  -12 semitones, so this frame statistic is not a key detector or a sufficient
+  take-ranking metric. The UI now exposes one decimal place for tolerance
+  percentages, voiced-frame counts, and an explicit incoherent-evidence warning.
 - The Vienna pitch evidence is multimodal. No detected key passes the coherence
   gate, so note-level key-adjusted targets require a manual shift.
 - Active-stage cancellation is not yet safe; the UI says so rather than claiming
@@ -80,8 +87,8 @@ because no controllable browser was available in this session.
 - Tauri/Electron packaging and a one-process desktop launcher
 - True cancellation/restart of active FFmpeg or model processes
 - Advanced direct-manipulation piano roll and arbitrary manual alignment anchors
-- Separate microphone-clock drift estimation; current device correction is a
-  constant latency plus system-reference local alignment
+- Separate microphone-clock drift detection; current synchronization deliberately
+  assumes one constant song-start shift and one constant device latency
 - Advanced note attacks/settling, interval, timing, vibrato, and repeatability
   taxonomy beyond measurements currently produced by the backend
 - TorchCREPE/pYIN adapters and model-management UI
@@ -89,8 +96,8 @@ because no controllable browser was available in this session.
 
 ## Verified state
 
-- 40 Python tests pass.
-- 25 frontend transport/state/gesture/import-lifecycle tests pass.
+- 38 Python tests pass.
+- 26 frontend transport/state/gesture/import-lifecycle tests pass.
 - Frontend production build and ESLint pass.
 - A bounded launch check returned HTTP 200 from both the local API and UI.
 - A synthetic microphone delayed by approximately one second was corrected before
@@ -106,9 +113,16 @@ because no controllable browser was available in this session.
   interval median error 70.1 cents and contour-direction agreement 61.5% across 403
   detected transitions. The single stored discrepancy requests manual key selection
   rather than emitting misleading note scores.
-- The newest Test take serves both 102.25-second WAV artifacts with valid RIFF
-  headers and HTTP 200 responses; its 2,549-point canonical/reference/user mapping
-  spans the take.
+- The two Test takes have distinct source, extracted-audio, and user-pitch hashes.
+  Their user tracks contain 7,537 versus 7,235 voiced frames and have only 0.18
+  aligned correlation, ruling out stale artifact reuse.
+- Their raw tracked-pitch medians differ by approximately 69.8 cents, confirming
+  that take 2 changed. The formerly identical displayed tolerance percentage was
+  rounding: 7.958% and 7.587% are now shown as 8.0% and 7.6%.
+- The newest Test take has a +1.06-second system-reference offset and approximately
+  +0.28-second microphone latency. Both Test takes were reanalyzed with the
+  `constant-offset` profile. Local warping has been removed; analysis and playback
+  now advance the shared span one-to-one at 1.0x.
 - Vienna take 2 was rebuilt as preserved baseline v10 with
-  Demucs 4.1.0/htdemucs/CUDA. Its full 101.94-second canonical mapping is safe
-  across 204 half-second windows, with both source rates effectively 1.0x.
+  Demucs 4.1.0/htdemucs/CUDA. Its full 101.94-second canonical mapping advances
+  one-to-one at 1.0x.

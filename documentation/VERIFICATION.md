@@ -56,7 +56,7 @@ npm.cmd --prefix apps/web run lint
 ```
 
 `npm test` performs a production Vinext/Vite build and then runs the frontend
-state tests. Result: **25 tests passed**, build passed, and ESLint passed.
+state tests. Result: **26 tests passed**, build passed, and ESLint passed.
 
 The tests cover the earlier state behavior plus shared scheduled starts, source
 readiness, constant and nonlinear mapping, 20 loop epochs without accumulated
@@ -65,17 +65,35 @@ recreation, rapid target switching, click-to-seek, click-sized loop rejection,
 intentional loop creation, loop-edge adjustment, project-scoped import drafts, and
 clearing an inspected recording to choose another file. It also proves that late
 loads from a disposed transport cannot overwrite active readiness and that Play at
-the canonical endpoint rewinds and schedules real source nodes. Partial waveforms
-are cropped and inverse-mapped to canonical time, while full-alignment rates outside
-0.67x-1.5x are rejected.
+the canonical endpoint rewinds and schedules real source nodes. It also proves that
+the scheduler ignores nonlinear mapping data, schedules continuous 1.0x source
+audio, and maps waveforms through the same constant offsets. No variable-rate
+playback mode remains.
 
-The newest local Test take was inspected directly through the API:
+Before removing local warping, both local Test takes were inspected directly:
 
-- user and reference artifacts are valid mono 48 kHz RIFF/WAV files, each 102.25 s;
-- both audio endpoints return HTTP 200 and the complete 9,816,142-byte file;
-- visualization returns 2,549 canonical/reference/user mapping points spanning
-  approximately 0.02-101.94 s;
-- waveform summaries span the full 102.25-second take.
+- source hashes, microphone/reference WAV hashes, alignment hashes, and user-pitch
+  hashes differ;
+- the tracks contain 7,537 versus 7,235 voiced frames, have different median MIDI
+  values, and have only 0.18 correlation after timestamp alignment;
+- their original-pitch median frame errors are 1097.7 and 1097.1 cents. The close
+  aggregate values are real outputs dominated by a roughly one-octave displacement,
+  not reused analysis;
+- the new take's path has a +1.06-second system offset, 0.84x-1.24x local rates,
+  and 38.2% non-pitch-safe half-second windows despite returning to the same net
+  offset. Constant correction now uses +1.06 seconds plus microphone latency while
+  keeping both recordings at 1.0x.
+
+After removing local warping and reanalyzing both Test takes:
+
+- both analyses report the `constant-offset` profile;
+- take 1 remains 1097.7 cents median across 1,445 aligned voiced frames;
+- take 2 is 1089.4 cents across 1,463 aligned voiced frames;
+- within-25-cent rates are 7.958% and 7.587%, now displayed as 8.0% and 7.6%
+  instead of both being rounded to 8%;
+- raw user-track medians differ by 69.8 cents, proving the pitch evidence changed,
+  while incompatible 0/-12-semitone clusters explain why the absolute-error median
+  remains insensitive.
 
 ## Unequal-length Vienna take
 
@@ -84,21 +102,19 @@ starts several seconds earlier. Reproducing take 2 against the take-1 baseline
 isolated the failure:
 
 - global synchronization correctly found +3.26 seconds;
-- constrained DTW then incorrectly forced the 45-second reference endpoint to the
-  102-second take endpoint;
+- the former constrained-DTW implementation incorrectly forced the 45-second
+  reference endpoint to the 102-second take endpoint;
 - 73.4% of pointwise mapping intervals fell outside 0.8x-1.25x;
 - observed local rates ranged from 0x to 90.5x, explaining the severely mangled
   audio.
 
-After shared-overlap truncation, the same inputs map canonical 0.02-44.98 seconds to
-source 3.28-48.23 seconds. Across 90 half-second windows, rates are 0.72x-1.22x and
-the mapping passes the playback safety boundary.
+After the constant-offset correction, the same inputs map canonical
+0.02-44.98 seconds to source 3.28-48.24 seconds one-to-one. The obsolete local
+path is no longer analysis evidence or a playback option.
 
 The existing Vienna take 2 was also rebuilt as new baseline v10 with Demucs
 4.1.0/htdemucs/CUDA; versions 1-9 remain available. The resulting full-length
-mapping covers canonical 0.02-101.94 seconds. Reference and user rates are
-effectively 1.0x in all 204 half-second windows, and
-`full_alignment_safe` is `true`.
+mapping covers canonical 0.02-101.94 seconds one-to-one at 1.0x.
 
 ## Private take metadata verification
 
@@ -111,8 +127,7 @@ Executed:
 python -m vocallab analyze `
   --project projects\1b27a59bfae04750aac558d74e9f542d `
   --take a1ba9ffa-7a03-46d6-8061-20174a03b089 `
-  --separator demucs `
-  --alignment-profile performance
+  --separator demucs
 ```
 
 Observed:

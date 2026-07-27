@@ -85,7 +85,10 @@ def build_scoring_modes(
         "modes": {
             ScoringMode.ORIGINAL_PITCH.value: {
                 "title": "Original pitch",
-                "description": "Absolute distance from the artist's original key.",
+                "description": (
+                    "Median frame-by-frame distance from the artist pitch contour. "
+                    "This is not a detected key difference."
+                ),
                 "metrics": pitch_metrics(absolute_errors),
                 "scoring_reference": "original_artist_pitch",
             },

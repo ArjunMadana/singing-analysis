@@ -74,6 +74,13 @@ class PipelineIntegrationTests(unittest.TestCase):
             self.assertTrue(second["baseline_reused"])
             self.assertTrue(any(e["stage"] == "baseline" for e in second["cache_events"]))
             self.assertIsNotNone(second["comparison_with_previous"])
+            reanalyzed_first = analyze_take(
+                store, first_id, AnalysisConfig(separator="fallback")
+            )
+            self.assertIsNone(
+                reanalyzed_first["comparison_with_previous"],
+                "Reanalyzing an older take must not compare it to a future take.",
+            )
             stored = store.get_take(second_id)
             stored_baseline = json.loads(stored["analysis_json"])["baseline_id"]
             self.assertEqual(stored_baseline, first["baseline_id"])

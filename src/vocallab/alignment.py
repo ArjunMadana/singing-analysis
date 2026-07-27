@@ -6,9 +6,6 @@ from scipy.signal import correlate, correlation_lags
 from vocallab.models import AlignmentResult
 
 
-PROFILE_BANDS = {"pitch-focused": 0.15, "performance": 0.08, "strict": 0.015}
-
-
 def estimate_global_offset(
     reference_feature: np.ndarray,
     user_feature: np.ndarray,
@@ -32,16 +29,19 @@ def estimate_global_offset(
     return float(lags[best] * hop_seconds), confidence
 
 
-def constrained_alignment(
+def constant_offset_alignment(
     reference_feature: np.ndarray,
     user_feature: np.ndarray,
     hop_seconds: float,
     global_offset_seconds: float,
-    profile: str = "performance",
     max_points: int = 3_000,
 ) -> AlignmentResult:
-    if profile not in PROFILE_BANDS:
-        raise ValueError(f"Unknown alignment profile '{profile}'.")
+    """Map a shared recording span using only one measured timestamp offset.
+
+    Baseline and current system-audio streams are captures of the same media
+    playback. Local DTW would invent tempo changes that are not present in the
+    source and would make frame scoring depend on a noisy nonlinear path.
+    """
     offset_frames = int(round(global_offset_seconds / hop_seconds))
     ref_start = max(0, -offset_frames)
     user_start = max(0, offset_frames)
@@ -50,76 +50,28 @@ def constrained_alignment(
     common = min(reference.size, user.size)
     if common < 2:
         return AlignmentResult(
-            global_offset_seconds, np.array([], dtype=int), np.array([], dtype=int), 0.0, profile
+            global_offset_seconds,
+            np.array([], dtype=int),
+            np.array([], dtype=int),
+            0.0,
+            "constant-offset",
         )
-    # Global offset establishes the overlapping start. DTW must operate only on
-    # that shared span: forcing unequal recording endpoints to match stretches a
-    # short excerpt across an entire longer take.
     reference = reference[:common]
     user = user[:common]
-    # Downsampling bounds DTW memory and is recorded in the returned index path.
-    stride = max(1, int(np.ceil(max(reference.size, user.size) / max_points)))
-    reference = _normalize_feature(reference[::stride])
-    user = _normalize_feature(user[::stride])
-    n, m = reference.size, user.size
-    band = max(2, int(np.ceil(max(n, m) * PROFILE_BANDS[profile])))
-    costs: list[dict[int, float]] = []
-    predecessors: list[dict[int, tuple[int, int]]] = []
-
-    for i in range(n):
-        expected = i * (m - 1) / max(n - 1, 1)
-        low = max(0, int(np.floor(expected - band)))
-        high = min(m - 1, int(np.ceil(expected + band)))
-        row: dict[int, float] = {}
-        previous_row = costs[i - 1] if i else {}
-        predecessor_row: dict[int, tuple[int, int]] = {}
-        for j in range(low, high + 1):
-            local = abs(reference[i] - user[j])
-            if i == 0 and j == 0:
-                row[j] = local
-                continue
-            candidates: list[tuple[float, tuple[int, int]]] = []
-            if j in previous_row:
-                candidates.append((previous_row[j], (i - 1, j)))
-            if j - 1 in row:
-                candidates.append((row[j - 1], (i, j - 1)))
-            if j - 1 in previous_row:
-                candidates.append((previous_row[j - 1], (i - 1, j - 1)))
-            if candidates:
-                prior_cost, predecessor = min(candidates, key=lambda item: item[0])
-                row[j] = local + prior_cost
-                predecessor_row[j] = predecessor
-        costs.append(row)
-        predecessors.append(predecessor_row)
-
-    if (m - 1) not in costs[-1]:
-        # A pathological length mismatch can miss the exact endpoint; use the best reachable end.
-        end_j = min(costs[-1], key=lambda j: costs[-1][j] + abs(j - (m - 1)))
-    else:
-        end_j = m - 1
-    i, j = n - 1, end_j
-    path: list[tuple[int, int]] = [(i, j)]
-    while (i, j) != (0, 0):
-        predecessor = predecessors[i].get(j)
-        if predecessor is None:
-            break
-        i, j = predecessor
-        path.append((i, j))
-    path.reverse()
-    reference_indices = np.asarray(
-        [ref_start + i * stride for i, _ in path], dtype=np.int64
-    )
-    user_indices = np.asarray(
-        [user_start + j * stride for _, j in path], dtype=np.int64
-    )
-    mean_cost = costs[-1][end_j] / max(len(path), 1)
+    stride = max(1, int(np.ceil(common / max_points)))
+    shared_indices = np.arange(0, common, stride, dtype=np.int64)
+    reference_indices = ref_start + shared_indices
+    user_indices = user_start + shared_indices
+    reference_normalized = _normalize_feature(reference[::stride])
+    user_normalized = _normalize_feature(user[::stride])
+    mean_cost = float(np.mean(np.abs(reference_normalized - user_normalized)))
     confidence = float(np.exp(-mean_cost))
     return AlignmentResult(
         global_offset_seconds,
         reference_indices,
         user_indices,
         confidence,
-        profile,
+        "constant-offset",
     )
 
 

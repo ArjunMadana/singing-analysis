@@ -568,39 +568,19 @@ Estimate initial latency and offset using one or more of:
 * Reference leakage in the microphone
 * Manual sync marker
 
-## Local alignment
+## Shared-span alignment
 
-Use constrained dynamic time warping or an equivalent method.
-
-Support:
-
-* Partial recordings
-* Small tempo differences
-* Early or late phrases
-* Held notes
-* Missing notes
-* Extra notes
-* Repeated sections
-
-Provide alignment profiles:
-
-### Pitch-focused
-
-Allow more flexible time warping so pitch can be evaluated separately from timing.
-
-### Performance
-
-Use moderate constraints so timing differences remain visible.
-
-### Strict
-
-Use global offset with minimal local correction.
+After global synchronization, advance baseline and current-reference frames
+one-to-one through their shared span. Apply one separate constant microphone-device
+latency. Do not use DTW or any other local time warp: early or late phrases, held
+notes, missing notes, extra notes, and repeated sections must remain visible as
+performance evidence.
 
 Store and display:
 
 * Global offset
-* Alignment path
-* Local warp
+* Microphone-device latency
+* Shared-span coverage
 * Alignment confidence
 * Low-confidence regions
 
@@ -1199,7 +1179,8 @@ Follow this order unless repository constraints require a documented adjustment.
 
 * Global offset
 * Alignment feature extraction
-* Constrained DTW
+* One-to-one shared-span mapping
+* Constant microphone-device latency
 * Manual-anchor data model
 * Transposition search
 * Octave decomposition

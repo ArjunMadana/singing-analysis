@@ -22,15 +22,16 @@ Interfaces are replaceable at the expensive/model-dependent boundaries:
   fallback when it is not.
 - `PitchEngine` initially uses a deterministic autocorrelation implementation and
   retains raw, corrected, and smoothed contours.
-- Alignment combines global energy-envelope correlation with band-constrained DTW.
+- Alignment uses global energy-envelope correlation followed by a one-to-one
+  shared-span mapping. It never performs local time warping.
 
 SQLite stores projects, takes, baseline versions, and pointers to artifact manifests.
 NumPy NPZ stores dense frame arrays. JSON manifests record source hashes, algorithms,
 versions, settings, outputs, warnings, and cache-hit evidence.
 
 Discrepancies retain saved-baseline times for stable comparisons. Report playback
-maps those ranges through the alignment path onto the current take timeline, so a
-loop remains correct when the current recording is delayed or locally time-warped.
+maps those ranges through the saved constant offsets onto the current take timeline,
+so a loop remains correct when the recording starts at a different timestamp.
 
 The local application adds a typed FastAPI orchestration boundary and a React
 Canvas workspace. API handlers call `ProjectStore`, `analyze_take`, pitch loaders,
@@ -53,20 +54,20 @@ method, matched coverage, and calibrated overall confidence remain in provenance
 The alignment artifact stores canonical baseline indices, current system-reference
 indices, and microphone indices after latency correction.
 
-After global offset establishes the overlapping start, constrained DTW truncates
-both inputs to their shared remaining length. This is essential when a short
-baseline excerpt is reused against a longer take: endpoint-to-endpoint DTW would
-otherwise stretch the excerpt over unrelated audio after it. Calibrated coverage
-continues to report how much of each recording actually participated.
+After the global offset establishes the overlapping start, baseline and current
+reference frames advance one-to-one through their shared remaining span. A short
+baseline excerpt therefore ends normally instead of being stretched over unrelated
+audio. Calibrated coverage reports how much of each recording participated.
 
 Browser playback uses `SharedAudioTransport`, not independent
 `HTMLAudioElement` clocks. It decodes both WAV artifacts into one `AudioContext`
 and schedules both sources at the same future context time. Canonical baseline
-time maps independently to reference and microphone time. The path is applied in
-bounded segments, with a playback-rate correction per segment for local warping.
-Pause, seek, loop change, and target change stop and recreate one atomic node set.
-Loop iterations are anchored to an absolute epoch, so timer delay does not
-accumulate into audio drift.
+time maps independently to reference and microphone time. Normal corrected
+playback applies the measured system-reference offset and microphone latency as
+constant source-time offsets and schedules each source at 1.0x. The detailed DTW
+path has been removed from analysis and playback. Pause, seek, loop change, and
+target change stop and recreate one atomic node set. Loop iterations are anchored
+to an absolute epoch, so timer delay does not accumulate into audio drift.
 
 Each asynchronous source load carries a transport generation. Project/take changes
 dispose the old generation; any fetch or decode that completes later is ignored and
@@ -75,12 +76,10 @@ selected source produced schedulable nodes. A cursor at or beyond the canonical
 mapping endpoint rewinds to zero before scheduling, avoiding a false playing state
 with no audio.
 
-The API evaluates each playback mapping in 0.5-second windows. Full local warping is
-available only when reference and user rates remain within 0.67x-1.5x throughout;
-the browser and scheduler both enforce this boundary. Unsafe saved paths fall back
-visibly to constant correction. Display waveforms are cropped to mapped source
-bounds and inverse-mapped into canonical time so waveform, pitch, cursor, and audio
-refer to the same overlap.
+Playback exposes only raw simultaneous timestamps and constant-offset correction.
+Every scheduled source has playback rate 1.0. Display waveforms use the selected
+raw or corrected offsets so waveform, pitch, cursor, and audio refer to the same
+active timeline.
 
 Raw discrepancies remain precise analysis measurements. `PracticeTarget`
 construction associates them with baseline notes, groups compatible nearby

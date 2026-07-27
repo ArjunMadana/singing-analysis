@@ -26,7 +26,6 @@ from vocallab.scoring import (
 from vocallab.separation import demucs_capability
 from vocallab.services import LibraryService, compare_analyses
 from vocallab.visualization import (
-    playback_mapping_quality,
     pitch_visualization,
     transport_mapping,
     waveform_summary,
@@ -47,7 +46,6 @@ class ImportTakeRequest(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     separator: Literal["auto", "demucs", "fallback"] = "auto"
-    alignment_profile: Literal["pitch-focused", "performance", "strict"] = "performance"
     refresh_reference: bool = False
 
 
@@ -171,7 +169,6 @@ def create_app(library_root: Path | None = None) -> FastAPI:
         store.get_take(take_id)
         config = AnalysisConfig(
             separator=request.separator,
-            alignment_profile=request.alignment_profile,
             refresh_reference=request.refresh_reference,
         )
         job = jobs.submit(
@@ -246,7 +243,6 @@ def create_app(library_root: Path | None = None) -> FastAPI:
             ),
             "transport": {
                 "mapping": mapping,
-                "mapping_quality": playback_mapping_quality(mapping),
                 "manual_offset_seconds": float(
                     row.get("playback_offset_seconds") or 0.0
                 ),

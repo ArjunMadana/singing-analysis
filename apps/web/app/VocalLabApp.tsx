@@ -131,7 +131,7 @@ export function VocalLabApp() {
   const [postRoll, setPostRoll] = useState(0.75);
   const [comparison, setComparison] = useState<any>(null);
   const [loopPreset, setLoopPreset] = useState("note_context");
-  const [playbackMode, setPlaybackMode] = useState<"raw" | "constant" | "full">("full");
+  const [playbackMode, setPlaybackMode] = useState<"raw" | "constant">("constant");
   const [mix, setMix] = useState<"user" | "reference" | "both">("both");
   const [manualOffset, setManualOffset] = useState(0);
   const [separatorMode, setSeparatorMode] = useState<"fallback" | "demucs">("fallback");
@@ -200,9 +200,6 @@ export function VocalLabApp() {
       request<{ notes: Note[]; versions: any[] }>(`/api/projects/${project.id}/baseline`),
     ])
       .then(([view, baseline]) => {
-        if (view.transport?.mapping_quality?.full_alignment_safe === false) {
-          setPlaybackMode((current) => current === "full" ? "constant" : current);
-        }
         setVisualization(view);
         const nextScoring = take.analysis.scoring ?? null;
         setScoringView(nextScoring);
@@ -238,10 +235,6 @@ export function VocalLabApp() {
     });
     transport.current = next;
     const savedOffset = visualization.transport.manual_offset_seconds ?? 0;
-    const fullAlignmentSafe =
-      visualization.transport.mapping_quality?.full_alignment_safe !== false;
-    const initialPlaybackMode =
-      playbackMode === "full" && !fullAlignmentSafe ? "constant" : playbackMode;
     next.setMix(mix);
     next.setVolumes(userVolume, referenceVolume);
     next.load(
@@ -251,7 +244,9 @@ export function VocalLabApp() {
       },
       {
         mapping: visualization.transport.mapping,
-        mode: initialPlaybackMode,
+        mode: playbackMode,
+        systemOffsetSeconds:
+          visualization.transport.diagnostics.system_reference_offset_seconds ?? 0,
         automaticLatencySeconds:
           visualization.transport.diagnostics.microphone_latency_seconds ?? 0,
         manualOffsetSeconds: savedOffset,
@@ -317,17 +312,21 @@ export function VocalLabApp() {
         visualization.waveforms.reference,
         visualization.transport.mapping,
         "reference_time",
+        playbackMode,
+        visualization.transport.diagnostics.system_reference_offset_seconds ?? 0,
       ),
       user: mapWaveformToCanonical(
         visualization.waveforms.user,
         visualization.transport.mapping,
         "user_time",
+        playbackMode,
+        visualization.transport.diagnostics.system_reference_offset_seconds ?? 0,
+        visualization.transport.diagnostics.microphone_latency_seconds ?? 0,
+        manualOffset,
       ),
     };
-  }, [visualization]);
+  }, [manualOffset, playbackMode, visualization]);
   const duration = displayWaveforms?.reference?.duration ?? 0;
-  const fullAlignmentSafe =
-    visualization?.transport?.mapping_quality?.full_alignment_safe !== false;
 
   const selectDiscrepancy = useCallback(
     (
@@ -400,7 +399,6 @@ export function VocalLabApp() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           separator: selectedSeparator,
-          alignment_profile: "performance",
           refresh_reference: refreshReference,
         }),
       },
@@ -452,6 +450,8 @@ export function VocalLabApp() {
         {
           mapping: visualization.transport.mapping,
           mode: playbackMode,
+          systemOffsetSeconds:
+            visualization.transport.diagnostics.system_reference_offset_seconds ?? 0,
           automaticLatencySeconds:
             visualization.transport.diagnostics.microphone_latency_seconds ?? 0,
           manualOffsetSeconds: manualOffset,
@@ -495,7 +495,7 @@ export function VocalLabApp() {
                   ? ` · ${item.latest_metrics.median_absolute_cents.toFixed(1)}¢ ${
                       item.latest_scoring_mode === "transposition_adjusted"
                         ? "key-adjusted error"
-                        : "original-key difference"
+                        : "original-pitch frame error"
                     }`
                   : ""}
               </span>
@@ -576,7 +576,7 @@ export function VocalLabApp() {
         {project && take?.analysis && visualization && (
           <>
             <section className="summary-strip">
-              <Metric label="Original-key difference" value={`${modes.original_pitch?.metrics?.median_absolute_cents?.toFixed(1) ?? "—"}¢`} />
+              <Metric label="Original-pitch frame error" value={`${modes.original_pitch?.metrics?.median_absolute_cents?.toFixed(1) ?? "—"}¢`} />
               <Metric
                 label="Detected key difference"
                 value={detectedReliable
@@ -637,7 +637,11 @@ export function VocalLabApp() {
               <div>
                 <span className="eyebrow">SCORING VIEW</span>
                 <h2>{selectedScoring?.title ?? "Reanalyze for explicit scoring"}</h2>
-                <p>{selectedScoring?.description ?? "This stored analysis predates the explicit scoring model."}</p>
+                <p>
+                  {scoringMode === "original_pitch"
+                    ? "Frame-by-frame distance from the artist pitch contour; this is not a detected key difference."
+                    : selectedScoring?.description ?? "This stored analysis predates the explicit scoring model."}
+                </p>
                 <small>Scoring against {scoringReferenceLabel}.</small>
                 {selectedScoring?.available === false && (
                   <small className="confidence">Unavailable until a coherent key is detected or you apply a manual global shift.</small>
@@ -646,7 +650,14 @@ export function VocalLabApp() {
                   <strong>{selectedScoring.metrics.median_absolute_cents.toFixed(1)}¢ median absolute difference</strong>
                 )}
                 {selectedScoring?.metrics?.within_25_cents_percentage !== undefined && (
-                  <small>{selectedScoring.metrics.within_25_cents_percentage.toFixed(0)}% within ±25¢</small>
+                  <small>{selectedScoring.metrics.within_25_cents_percentage.toFixed(1)}% within ±25¢ across {selectedScoring.metrics.voiced_frame_count} voiced frames</small>
+                )}
+                {scoringMode === "original_pitch" && !detectedReliable && (
+                  <small className="confidence">
+                    No coherent global pitch shift was found. This median can hide
+                    incompatible pitch and octave clusters and should not rank takes
+                    by itself.
+                  </small>
                 )}
                 {scoringMode === "interval_contour" &&
                   selectedScoring?.metrics?.contour_direction_agreement_percentage !== undefined && (
@@ -826,25 +837,19 @@ export function VocalLabApp() {
                   <select
                     value={playbackMode}
                     onChange={(event) => {
-                      const mode = event.target.value as "raw" | "constant" | "full";
+                      const mode = event.target.value as "raw" | "constant";
                       setPlaybackMode(mode);
                       transport.current?.setMode(mode);
                     }}
                   >
                     <option value="raw">Raw simultaneous</option>
                     <option value="constant">Constant offset corrected</option>
-                    <option value="full" disabled={!fullAlignmentSafe}>
-                      Full alignment corrected
-                    </option>
                   </select>
                 </label>
-                {!fullAlignmentSafe && (
-                  <span className="confidence">
-                    Full alignment playback is disabled because the saved path
-                    requires unsafe speed changes. Constant correction preserves
-                    the audio.
-                  </span>
-                )}
+                <span className="confidence">
+                  Playback uses timestamp shifts only. Both recordings remain at
+                  1.0× speed.
+                </span>
                 <label className="manual-offset">
                   Diagnostic microphone offset {manualOffset >= 0 ? "+" : ""}{manualOffset.toFixed(2)}s
                   <input
@@ -885,13 +890,12 @@ export function VocalLabApp() {
                   <dt>Candidate disagreement</dt><dd>{visualization.transport.diagnostics.latency_candidate_disagreement_seconds.toFixed(3)}s</dd>
                   <dt>Mapped user time at cursor</dt><dd>{playbackDiagnostics?.userTime.toFixed(3)}s</dd>
                   <dt>Mapped reference time at cursor</dt><dd>{playbackDiagnostics?.referenceTime.toFixed(3)}s</dd>
-                  <dt>Local correction at cursor</dt><dd>{playbackDiagnostics?.localCorrection.toFixed(3)}s</dd>
                   <dt>Total effective playback offset</dt><dd>{playbackDiagnostics?.totalEffectiveOffset.toFixed(3)}s</dd>
                   <dt>Matched coverage</dt><dd>{(visualization.transport.diagnostics.matched_coverage * 100).toFixed(0)}%</dd>
                   <dt>Calibrated confidence</dt><dd>{(visualization.transport.diagnostics.alignment_confidence * 100).toFixed(0)}%</dd>
                   {loop && <>
-                    <dt>Mapped user loop start</dt><dd>{mappedSourceTime(visualization.transport.mapping, loop.start, "user", playbackMode, visualization.transport.diagnostics.microphone_latency_seconds, manualOffset).toFixed(3)}s</dd>
-                    <dt>Mapped user loop end</dt><dd>{mappedSourceTime(visualization.transport.mapping, loop.end, "user", playbackMode, visualization.transport.diagnostics.microphone_latency_seconds, manualOffset).toFixed(3)}s</dd>
+                    <dt>Mapped user loop start</dt><dd>{mappedSourceTime(visualization.transport.mapping, loop.start, "user", playbackMode, visualization.transport.diagnostics.microphone_latency_seconds, manualOffset, visualization.transport.diagnostics.system_reference_offset_seconds).toFixed(3)}s</dd>
+                    <dt>Mapped user loop end</dt><dd>{mappedSourceTime(visualization.transport.mapping, loop.end, "user", playbackMode, visualization.transport.diagnostics.microphone_latency_seconds, manualOffset, visualization.transport.diagnostics.system_reference_offset_seconds).toFixed(3)}s</dd>
                   </>}
                 </dl>
               </details>
@@ -1074,7 +1078,7 @@ function ComparisonResult({ data }: any) {
   const label = data.metrics_mode === "transposition_adjusted"
     ? "Key-adjusted median error"
     : data.metrics_mode === "original_pitch"
-      ? "Original-key median difference"
+      ? "Original-pitch median frame error"
       : "Legacy median pitch metric";
   return <div className="comparison-result"><div><span>{label}</span><strong>{first.toFixed(1)}¢ → {second.toFixed(1)}¢</strong><small className={verdict}>{verdict === "improved" ? `${(first - second).toFixed(1)}¢ improvement` : verdict === "worsened" ? `${(second - first).toFixed(1)}¢ worse` : verdict}</small></div><div><span>Practice targets</span><strong>{data.improved.length} improved · {data.resolved.length} resolved</strong><small>{data.worsened.length} worsened · {data.introduced.length} new</small></div><ComparisonContours contours={data.contours} />{data.improved.slice(0, 4).map((item: any) => <p key={`${item.before.kind}-${item.before.start_seconds}`}>{item.before.kind}: {item.before.magnitude.toFixed(0)}¢ → {item.after.magnitude.toFixed(0)}¢ at {item.before.start_seconds.toFixed(2)}s.</p>)}</div>;
 }

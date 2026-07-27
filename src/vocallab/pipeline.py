@@ -11,7 +11,7 @@ import numpy as np
 from vocallab import __version__
 from vocallab.alignment import (
     calibrated_alignment_confidence,
-    constrained_alignment,
+    constant_offset_alignment,
     estimate_global_offset,
     estimate_microphone_latency,
     reconcile_latency_estimates,
@@ -47,7 +47,6 @@ class AnalysisConfig:
     sample_rate: int = 48_000
     start_seconds: float | None = None
     duration_seconds: float | None = None
-    alignment_profile: str = "performance"
     separator: str = "auto"
     refresh_reference: bool = False
     voicing_threshold: float = 0.35
@@ -213,12 +212,11 @@ def analyze_take(
     )
     notify("synchronization", "completed", {"offset_seconds": offset})
     notify("alignment", "running", None)
-    alignment = constrained_alignment(
+    alignment = constant_offset_alignment(
         baseline_envelope,
         current_envelope,
         pitch_settings.hop_seconds,
         offset,
-        config.alignment_profile,
     )
     current_reference_indices = np.asarray(alignment.user_indices).copy()
     pitch_latency, pitch_latency_confidence = estimate_microphone_latency(
@@ -543,10 +541,15 @@ def _note_from_dict(payload: dict[str, Any]) -> NoteEvent:
 def _prior_take_comparison(
     project: ProjectStore, current_take_id: str, current_scoring: dict[str, Any]
 ) -> dict[str, Any] | None:
+    takes = project.list_takes()
+    current_position = next(
+        (index for index, take in enumerate(takes) if take["id"] == current_take_id),
+        len(takes),
+    )
     analyzed = [
         take
-        for take in project.list_takes()
-        if take["id"] != current_take_id and take.get("analysis_json")
+        for take in takes[:current_position]
+        if take.get("analysis_json")
     ]
     if not analyzed:
         return None
@@ -568,7 +571,7 @@ def _prior_take_comparison(
     label = (
         "Key-adjusted median pitch error"
         if use_adjusted
-        else "Original-key median pitch difference"
+        else "Original-pitch median frame error"
     )
     return {
         "take_id": previous["id"],

@@ -581,40 +581,19 @@ Estimate the initial offset between microphone and reference audio using one or 
 * Onset-envelope correlation
 * User-provided sync marker
 
-## 11.2 Flexible alignment
+## 11.2 Constant timeline alignment
 
-Use constrained dynamic time warping or an equivalent sequence-alignment method to handle:
-
-* Recording latency
-* Slight tempo differences
-* Early or late singing
-* Held notes
-* Missed notes
-* Repeated notes
-* Partial-song recordings
-
-## 11.3 Alignment modes
-
-Provide separate alignment profiles:
-
-### Pitch-isolated alignment
-
-Allow flexible time warping to judge pitch independently of timing.
-
-### Performance alignment
-
-Restrict time warping so timing errors remain visible.
-
-### Strict alignment
-
-Use only global offset and minimal local correction.
+The system/reference stream is a recording of the same source playback as the
+baseline. Align it with one global timestamp offset, then advance both timelines
+one-to-one through their shared span. Estimate microphone-device latency as a
+second constant offset. Do not time-warp early or late singing, held notes, missed
+notes, repeated notes, or partial recordings; those are performance evidence.
 
 ## 11.4 Alignment transparency
 
 The user must be able to view:
 
 * Global offset
-* Local time-warp curve
 * Regions with low alignment confidence
 * Manual alignment anchors
 
@@ -1054,7 +1033,6 @@ Each item should include:
   "baseline_id": "uuid",
   "detected_transposition": -5,
   "detected_octave_shift": 0,
-  "alignment_profile": "performance",
   "created_at": "timestamp",
   "notes": ""
 }
@@ -1068,7 +1046,7 @@ Store:
 * Per-note metrics
 * Per-phrase metrics
 * Global metrics
-* Alignment path
+* Constant alignment offsets and shared-span indices
 * Confidence values
 * Algorithm versions
 * User overrides

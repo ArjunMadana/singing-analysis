@@ -4,7 +4,7 @@ import numpy as np
 
 from vocallab.alignment import (
     calibrated_alignment_confidence,
-    constrained_alignment,
+    constant_offset_alignment,
     estimate_global_offset,
     estimate_microphone_latency,
     reconcile_latency_estimates,
@@ -20,14 +20,24 @@ class AlignmentTests(unittest.TestCase):
         self.assertAlmostEqual(offset, 0.12, places=2)
         self.assertGreater(confidence, 0.8)
 
-    def test_constrained_path_is_monotonic(self) -> None:
+    def test_constant_path_never_invents_local_speed_changes(self) -> None:
         x = np.linspace(0, 8 * np.pi, 400)
         reference = np.square(np.sin(x)) + 0.1
         user = np.interp(np.linspace(0, 399, 420), np.arange(400), reference)
-        alignment = constrained_alignment(reference, user, 0.01, 0.0)
-        self.assertTrue(np.all(np.diff(alignment.reference_indices) >= 0))
-        self.assertTrue(np.all(np.diff(alignment.user_indices) >= 0))
-        self.assertGreater(alignment.confidence, 0.5)
+        alignment = constant_offset_alignment(reference, user, 0.01, 0.0)
+        self.assertTrue(
+            np.array_equal(
+                np.diff(alignment.reference_indices),
+                np.diff(alignment.user_indices),
+            )
+        )
+        self.assertEqual(alignment.profile, "constant-offset")
+        self.assertGreater(alignment.confidence, 0.0)
+        self.assertLess(
+            alignment.confidence,
+            0.5,
+            "A tempo mismatch must reduce confidence instead of being warped away.",
+        )
 
     def test_partial_reference_aligns_only_shared_overlap(self) -> None:
         reference = np.sin(np.linspace(0, 20, 450))
@@ -38,7 +48,7 @@ class AlignmentTests(unittest.TestCase):
                 np.cos(np.linspace(0, 20, 550)),
             ]
         )
-        alignment = constrained_alignment(
+        alignment = constant_offset_alignment(
             reference,
             user,
             hop_seconds=0.01,

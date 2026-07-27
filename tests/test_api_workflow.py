@@ -44,7 +44,7 @@ class ApiWorkflowTests(unittest.TestCase):
     def _analyze(self, client: TestClient, project_id: str, take_id: str) -> dict:
         response = client.post(
             f"/api/projects/{project_id}/takes/{take_id}/analyze",
-            json={"separator": "fallback", "alignment_profile": "performance"},
+            json={"separator": "fallback"},
         )
         self.assertEqual(response.status_code, 202)
         job_id = response.json()["job_id"]
@@ -125,9 +125,11 @@ class ApiWorkflowTests(unittest.TestCase):
                 self.assertTrue(
                     view.json()["transport"]["mapping"]["canonical_time"]
                 )
-                self.assertIn(
-                    "full_alignment_safe",
-                    view.json()["transport"]["mapping_quality"],
+                self.assertAlmostEqual(
+                    view.json()["transport"]["diagnostics"][
+                        "system_reference_offset_seconds"
+                    ],
+                    0.0,
                 )
                 self.assertIn("practice_targets", view.json())
                 before_scoring = take_payload["analysis"]

@@ -48,11 +48,6 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--start", type=float, default=None, help="section start in seconds")
     analyze.add_argument("--duration", type=float, default=None, help="section duration in seconds")
     analyze.add_argument(
-        "--alignment-profile",
-        choices=("pitch-focused", "performance", "strict"),
-        default="performance",
-    )
-    analyze.add_argument(
         "--separator", choices=("auto", "demucs", "fallback"), default="auto"
     )
     analyze.add_argument("--refresh-reference", action="store_true")
@@ -127,7 +122,6 @@ def _dispatch(arguments: argparse.Namespace) -> int:
             AnalysisConfig(
                 start_seconds=arguments.start,
                 duration_seconds=arguments.duration,
-                alignment_profile=arguments.alignment_profile,
                 separator=arguments.separator,
                 refresh_reference=arguments.refresh_reference,
             ),
