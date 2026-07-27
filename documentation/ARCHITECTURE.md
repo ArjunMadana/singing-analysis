@@ -39,6 +39,13 @@ Media selected in the browser enters a library-owned staging directory and is
 copied into project-owned storage on import. Artifact endpoints resolve only
 allow-listed paths beneath the selected project.
 
+The browser import draft contains its owning project ID, inspection token, and
+stream-role choices. A project change or fresh Import action replaces the whole
+draft rather than retaining independent global inspection fields. The confirmation
+screen can also replace the draft explicitly through Choose different recording.
+This prevents a staging token inspected for one project from appearing as the next
+project's pending import.
+
 Synchronization has two explicit layers: system audio is aligned to the saved song
 reference, then pitch-contour and energy-envelope evidence estimate one constant
 microphone capture latency. Their estimates, confidences, disagreement, selection

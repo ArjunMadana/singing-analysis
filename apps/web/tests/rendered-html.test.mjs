@@ -17,10 +17,33 @@ import {
   sourcesReady,
 } from "../app/lib/shared-transport.mjs";
 import { resolveTimelineGesture } from "../app/lib/timeline-interaction.mjs";
+import {
+  createImportDraft,
+  createInspectedImportDraft,
+  importDraftForProject,
+} from "../app/lib/import-draft.mjs";
 
 test("normalizes loop selection and keeps a useful minimum", () => {
   assert.deepEqual(normalizeLoop(4, 2, 10), { start: 2, end: 4 });
   assert.deepEqual(normalizeLoop(-2, 0.01, 10), { start: 0, end: 0.08 });
+});
+
+test("a new project cannot inherit a previously inspected recording", () => {
+  const inspected = createInspectedImportDraft("project-one", {
+    token: "old-recording",
+    streams: [
+      { index: 0, suggested_role: "microphone" },
+      { index: 1, suggested_role: "reference" },
+    ],
+  });
+  const next = importDraftForProject(inspected, "project-two");
+  assert.deepEqual(next, createImportDraft("project-two"));
+});
+
+test("choosing another recording clears inspection and stream roles", () => {
+  const reset = createImportDraft("project-one");
+  assert.equal(reset.inspection, null);
+  assert.deepEqual(reset.roles, {});
 });
 
 test("timeline click seeks without creating a loop", () => {

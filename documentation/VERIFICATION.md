@@ -55,13 +55,14 @@ npm.cmd --prefix apps/web run lint
 ```
 
 `npm test` performs a production Vinext/Vite build and then runs the frontend
-state tests. Result: **19 tests passed**, build passed, and ESLint passed.
+state tests. Result: **21 tests passed**, build passed, and ESLint passed.
 
 The tests cover the earlier state behavior plus shared scheduled starts, source
 readiness, constant and nonlinear mapping, 20 loop epochs without accumulated
 drift, failed-source behavior, mix/gain behavior during playback, pause/resume node
 recreation, rapid target switching, click-to-seek, click-sized loop rejection,
-intentional loop creation, and loop-edge adjustment.
+intentional loop creation, loop-edge adjustment, project-scoped import drafts, and
+clearing an inspected recording to choose another file.
 
 ## Private take metadata verification
 

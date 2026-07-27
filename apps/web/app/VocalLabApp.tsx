@@ -18,6 +18,12 @@ import {
   mappedSourceTime,
   transportDiagnostics,
 } from "./lib/shared-transport.mjs";
+import {
+  createImportDraft,
+  createInspectedImportDraft,
+  importDraftForProject,
+  type ImportDraft,
+} from "./lib/import-draft.mjs";
 
 const API = process.env.NEXT_PUBLIC_VOCALLAB_API ?? "http://127.0.0.1:8000";
 const STAGES = [
@@ -97,8 +103,9 @@ export function VocalLabApp() {
   const [project, setProject] = useState<Project | null>(null);
   const [takes, setTakes] = useState<Take[]>([]);
   const [take, setTake] = useState<Take | null>(null);
-  const [inspection, setInspection] = useState<Inspection | null>(null);
-  const [roles, setRoles] = useState<Record<number, string>>({});
+  const [importDraft, setImportDraft] = useState<ImportDraft<Inspection>>(
+    () => createImportDraft<Inspection>(),
+  );
   const [job, setJob] = useState<any>(null);
   const [visualization, setVisualization] = useState<any>(null);
   const [error, setError] = useState("");
@@ -153,6 +160,8 @@ export function VocalLabApp() {
 
   const loadProject = useCallback(async (id: string, preferredTake?: string) => {
     transport.current?.pause();
+    setImportOpen(false);
+    setImportDraft(createImportDraft<Inspection>(id));
     setVisualization(null);
     setSelectedIndex(-1);
     setLoop(null);
@@ -167,6 +176,12 @@ export function VocalLabApp() {
       null;
     setTake(next);
   }, []);
+
+  const openImportDialog = useCallback(() => {
+    if (!project) return;
+    setImportDraft(createImportDraft<Inspection>(project.id));
+    setImportOpen(true);
+  }, [project]);
 
   useEffect(() => {
     // Initial data synchronization with the local service.
@@ -499,7 +514,7 @@ export function VocalLabApp() {
                 setTake(null);
                 await loadProjects();
               }}>Delete</button>
-              <button className="primary" onClick={() => setImportOpen(true)}>Import take</button>
+              <button className="primary" onClick={openImportDialog}>Import take</button>
             </div>
           )}
         </header>
@@ -509,7 +524,7 @@ export function VocalLabApp() {
         {!project && <EmptyState onCreate={() => setCreateOpen(true)} />}
 
         {project && takes.length === 0 && (
-          <EmptyState onCreate={() => setImportOpen(true)} importMode />
+          <EmptyState onCreate={openImportDialog} importMode />
         )}
 
         {project && take && !take.analysis && !job && (
@@ -950,7 +965,28 @@ export function VocalLabApp() {
       </section>
 
       {createOpen && <CreateProject close={() => setCreateOpen(false)} created={async (created) => { await loadProjects(); await loadProject(created.id); setCreateOpen(false); }} />}
-      {importOpen && project && <ImportDialog project={project} inspection={inspection} setInspection={setInspection} roles={roles} setRoles={setRoles} close={() => setImportOpen(false)} imported={async (takeId) => { await loadProject(project.id, takeId); setImportOpen(false); setJob(null); }} runAnalysis={runAnalysis} setError={setError} busy={busy} setBusy={setBusy} separatorMode={separatorMode} setSeparatorMode={setSeparatorMode} capabilities={capabilities} />}
+      {importOpen && project && <ImportDialog
+        project={project}
+        draft={importDraftForProject(importDraft, project.id)}
+        setDraft={setImportDraft}
+        close={() => {
+          setImportOpen(false);
+          setImportDraft(createImportDraft<Inspection>(project.id));
+        }}
+        imported={async (takeId) => {
+          await loadProject(project.id, takeId);
+          setImportOpen(false);
+          setImportDraft(createImportDraft<Inspection>(project.id));
+          setJob(null);
+        }}
+        runAnalysis={runAnalysis}
+        setError={setError}
+        busy={busy}
+        setBusy={setBusy}
+        separatorMode={separatorMode}
+        setSeparatorMode={setSeparatorMode}
+        capabilities={capabilities}
+      />}
     </main>
   );
 }
@@ -973,18 +1009,19 @@ function CreateProject({ close, created }: { close: () => void; created: (projec
   return <div className="modal-backdrop"><form className="modal" onSubmit={async (event) => { event.preventDefault(); created(await request<Project>("/api/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title, artist }) })); }}><span className="eyebrow">NEW SONG PROJECT</span><h2>What are you practicing?</h2><label>Song title<input autoFocus required value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>Artist<input required value={artist} onChange={(event) => setArtist(event.target.value)} /></label><div className="modal-actions"><button type="button" className="secondary" onClick={close}>Cancel</button><button className="primary">Create project</button></div></form></div>;
 }
 
-function ImportDialog({ project, inspection, setInspection, roles, setRoles, close, imported, runAnalysis, setError, busy, setBusy, separatorMode, setSeparatorMode, capabilities }: any) {
+function ImportDialog({ project, draft, setDraft, close, imported, runAnalysis, setError, busy, setBusy, separatorMode, setSeparatorMode, capabilities }: any) {
+  const inspection: Inspection | null = draft.inspection;
+  const roles: Record<number, string> = draft.roles;
   const inspect = async (file: File) => {
     setBusy(true);
     try {
       const data = await request<Inspection>(`/api/recordings/inspect?filename=${encodeURIComponent(file.name)}`, { method: "POST", headers: { "content-type": file.type || "application/octet-stream" }, body: file });
-      setInspection(data);
-      setRoles(Object.fromEntries(data.streams.map((stream) => [stream.index, stream.suggested_role])));
+      setDraft(createInspectedImportDraft(project.id, data));
     } catch (reason: any) { setError(reason.message); } finally { setBusy(false); }
   };
   const mic = inspection?.streams.find((stream: Stream) => roles[stream.index] === "microphone");
   const reference = inspection?.streams.find((stream: Stream) => roles[stream.index] === "reference");
-  return <div className="modal-backdrop"><div className="modal import-modal"><span className="eyebrow">IMPORT OBS RECORDING</span><h2>{inspection ? "Confirm stream roles" : "Choose a recording"}</h2>{!inspection ? <label className="dropzone"><input type="file" accept=".mkv,.mp4,.mov,.wav,.flac,.mp3,.m4a" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} /><strong>{busy ? "Inspecting locally…" : "Drop or choose a multistream recording"}</strong><small>The source file is never modified.</small></label> : <><div className="stream-list">{inspection.streams.map((stream) => <article key={stream.index}><div><strong>Stream {stream.index}</strong><small>{stream.title || "Untitled"} · {stream.codec} · {stream.channels}ch · {stream.sample_rate} Hz · {stream.duration_seconds?.toFixed(1)}s</small><small>RMS {(20 * Math.log10(Math.max(stream.statistics.rms, 1e-8))).toFixed(1)} dBFS · peak {(stream.statistics.peak * 100).toFixed(0)}%</small></div><audio controls preload="none" src={`${API}${stream.preview_url}`} /><select value={roles[stream.index]} onChange={(event) => setRoles({ ...roles, [stream.index]: event.target.value })}><option value="microphone">Microphone</option><option value="reference">Reference/system</option><option value="mixed">Mixed</option><option value="ignore">Ignore</option></select></article>)}</div><div className="reference-choice"><label>Reference processing<select value={separatorMode} onChange={(event) => setSeparatorMode(event.target.value)}><option value="fallback">Full mix fallback</option><option value="demucs" disabled={!capabilities?.demucs?.compatible}>Demucs htdemucs</option></select></label><small>{capabilities?.demucs?.installed ? `Installed: Demucs ${capabilities.demucs.version} · ${capabilities.demucs.model}` : "Demucs unavailable; full-mix results will be labeled provisional."}</small>{!capabilities?.demucs?.installed && <code>{capabilities?.demucs?.install_command}</code>}</div></>}<div className="modal-actions"><button className="secondary" onClick={close}>Cancel</button>{inspection && <button className="primary" disabled={!validStreamRoles(roles) || (separatorMode === "demucs" && !capabilities?.demucs?.compatible)} onClick={async () => { try { const result = await request<{ take_id: string }>(`/api/projects/${project.id}/takes`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recording_token: inspection.token, microphone_stream: mic.index, reference_stream: reference.index }) }); await imported(result.take_id); await runAnalysis(result.take_id, separatorMode); } catch (reason: any) { setError(reason.message); } }}>Import & analyze</button>}</div></div></div>;
+  return <div className="modal-backdrop"><div className="modal import-modal"><span className="eyebrow">IMPORT OBS RECORDING</span><h2>{inspection ? "Confirm stream roles" : "Choose a recording"}</h2>{!inspection ? <label className="dropzone"><input type="file" accept=".mkv,.mp4,.mov,.wav,.flac,.mp3,.m4a" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} /><strong>{busy ? "Inspecting locally…" : "Drop or choose a multistream recording"}</strong><small>The source file is never modified.</small></label> : <><div className="stream-list">{inspection.streams.map((stream) => <article key={stream.index}><div><strong>Stream {stream.index}</strong><small>{stream.title || "Untitled"} · {stream.codec} · {stream.channels}ch · {stream.sample_rate} Hz · {stream.duration_seconds?.toFixed(1)}s</small><small>RMS {(20 * Math.log10(Math.max(stream.statistics.rms, 1e-8))).toFixed(1)} dBFS · peak {(stream.statistics.peak * 100).toFixed(0)}%</small></div><audio controls preload="none" src={`${API}${stream.preview_url}`} /><select value={roles[stream.index]} onChange={(event) => setDraft({ ...draft, roles: { ...roles, [stream.index]: event.target.value } })}><option value="microphone">Microphone</option><option value="reference">Reference/system</option><option value="mixed">Mixed</option><option value="ignore">Ignore</option></select></article>)}</div><div className="reference-choice"><label>Reference processing<select value={separatorMode} onChange={(event) => setSeparatorMode(event.target.value)}><option value="fallback">Full mix fallback</option><option value="demucs" disabled={!capabilities?.demucs?.compatible}>Demucs htdemucs</option></select></label><small>{capabilities?.demucs?.installed ? `Installed: Demucs ${capabilities.demucs.version} · ${capabilities.demucs.model}` : "Demucs unavailable; full-mix results will be labeled provisional."}</small>{!capabilities?.demucs?.installed && <code>{capabilities?.demucs?.install_command}</code>}</div></>}<div className="modal-actions">{inspection && <button className="secondary" onClick={() => setDraft(createImportDraft(project.id))}>Choose different recording</button>}<button className="secondary" onClick={close}>Cancel</button>{inspection && <button className="primary" disabled={!validStreamRoles(roles) || (separatorMode === "demucs" && !capabilities?.demucs?.compatible)} onClick={async () => { try { const result = await request<{ take_id: string }>(`/api/projects/${project.id}/takes`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recording_token: inspection.token, microphone_stream: mic.index, reference_stream: reference.index }) }); await imported(result.take_id); await runAnalysis(result.take_id, separatorMode); } catch (reason: any) { setError(reason.message); } }}>Import & analyze</button>}</div></div></div>;
 }
 
 function Comparison({ project, takes, onResult }: any) {

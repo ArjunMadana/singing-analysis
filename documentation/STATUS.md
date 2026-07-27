@@ -55,6 +55,8 @@ because no controllable browser was available in this session.
   clear-loop control
 - Active baseline provenance separated from next-reference-rebuild settings
 - Mode-compatible take comparisons
+- Project-scoped recording-import drafts with fresh-import reset and an explicit
+  Choose different recording action
 
 ## Degraded behavior
 
@@ -85,7 +87,7 @@ because no controllable browser was available in this session.
 ## Verified state
 
 - 37 Python tests pass.
-- 19 frontend transport/state/gesture tests pass.
+- 21 frontend transport/state/gesture/import-lifecycle tests pass.
 - Frontend production build and ESLint pass.
 - A bounded launch check returned HTTP 200 from both the local API and UI.
 - A synthetic microphone delayed by approximately one second was corrected before

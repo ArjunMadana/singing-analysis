@@ -54,6 +54,9 @@ The integrated local browser application must preserve the Phase 1 boundary and:
     drag; loop edges can be resized explicitly and loops can be cleared explicitly.
 15. Label active reference provenance separately from settings for the next
     reference rebuild.
+16. Scope an inspected recording and its stream-role draft to one project. Opening
+    a fresh import or switching projects must show an empty file chooser, and the
+    confirmation step must let the user choose a different recording.
 
 Desktop packaging and an advanced direct-manipulation piano roll remain later
 milestones.
