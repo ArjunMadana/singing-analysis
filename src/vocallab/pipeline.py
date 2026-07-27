@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 
@@ -26,7 +27,12 @@ from vocallab.cache import ArtifactCache, CacheKey, file_hash
 from vocallab.errors import AnalysisError
 from vocallab.logging_utils import event
 from vocallab.models import NoteEvent, NoteSource, PitchSettings
-from vocallab.pitch import load_pitch_track, save_pitch_track, track_file
+from vocallab.pitch import (
+    TorchCrepePitchEngine,
+    load_pitch_track,
+    save_pitch_track,
+    track_file,
+)
 from vocallab.project import ProjectStore
 from vocallab.scoring import (
     aligned_pitch_evidence,
@@ -37,7 +43,6 @@ from vocallab.scoring import (
 from vocallab.segmentation import segment_notes
 from vocallab.separation import SeparationResult, choose_separator
 from vocallab.transposition import detect_transposition
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -120,11 +125,14 @@ def analyze_take(
 
     active_baseline = project.active_baseline()
     build_reference = active_baseline is None or config.refresh_reference
+    migrate_reference = (
+        active_baseline is not None
+        and not config.refresh_reference
+        and not _baseline_pitch_compatible(active_baseline, pitch_settings)
+    )
     if build_reference:
         notify("reference_preparation", "running", None)
-        separation = _separate_cached(
-            cache, current_reference_path, config.separator, cache_events
-        )
+        separation = _separate_cached(cache, current_reference_path, config.separator, cache_events)
         reference_pitch_path = _pitch_cached(
             cache,
             separation.vocal_path,
@@ -148,6 +156,7 @@ def analyze_take(
             "reference_confidence": separation.confidence,
             "warnings": list(separation.warnings),
             "pitch_settings": asdict(pitch_settings),
+            "pitch_tracker": reference_pitch.tracker,
             "notes": [_note_dict(note) for note in notes],
         }
         baseline_id = project.save_baseline(take["id"], baseline_artifact)
@@ -159,6 +168,57 @@ def analyze_take(
             "reference_preparation",
             "completed",
             {"engine": separation.engine, "warnings": list(separation.warnings)},
+        )
+    elif migrate_reference:
+        assert active_baseline is not None
+        previous_artifact = json.loads(active_baseline["artifact_json"])
+        vocal_path = Path(previous_artifact["vocal_audio"])
+        if not vocal_path.exists():
+            raise AnalysisError(
+                "The active baseline uses an obsolete pitch engine and its preserved "
+                "vocal artifact is missing. Rebuild the reference to migrate it to "
+                "TorchCREPE."
+            )
+        notify(
+            "reference_preparation",
+            "running",
+            {
+                "migration": "torchcrepe",
+                "from_baseline_version": int(active_baseline["version"]),
+            },
+        )
+        reference_pitch_path = _pitch_cached(
+            cache,
+            vocal_path,
+            "pitch-reference",
+            pitch_settings,
+            cache_events,
+        )
+        reference_pitch = load_pitch_track(reference_pitch_path)
+        notes = segment_notes(reference_pitch, config.voicing_threshold)
+        baseline_artifact = {
+            **previous_artifact,
+            "application_version": __version__,
+            "reference_pitch": str(reference_pitch_path),
+            "pitch_settings": asdict(pitch_settings),
+            "pitch_tracker": reference_pitch.tracker,
+            "notes": [_note_dict(note) for note in notes],
+            "migrated_from_baseline_id": str(active_baseline["id"]),
+            "migrated_from_baseline_version": int(active_baseline["version"]),
+        }
+        baseline_id = project.save_baseline(take["id"], baseline_artifact)
+        migrated_baseline = project.active_baseline()
+        baseline_version = int(migrated_baseline["version"]) if migrated_baseline else 1
+        baseline_reused = False
+        notify("note_generation", "completed", {"note_count": len(notes)})
+        notify(
+            "reference_preparation",
+            "completed",
+            {
+                "engine": previous_artifact.get("separation_engine", "unknown"),
+                "pitch_tracker": reference_pitch.tracker,
+                "migration": "torchcrepe",
+            },
         )
     else:
         assert active_baseline is not None
@@ -252,9 +312,7 @@ def analyze_take(
         energy_seconds=energy_latency,
         energy_confidence=energy_latency_confidence,
     )
-    microphone_latency_frames = int(
-        round(microphone_latency / pitch_settings.hop_seconds)
-    )
+    microphone_latency_frames = int(round(microphone_latency / pitch_settings.hop_seconds))
     alignment = type(alignment)(
         global_offset_seconds=alignment.global_offset_seconds,
         reference_indices=alignment.reference_indices,
@@ -287,20 +345,16 @@ def analyze_take(
     )
 
     notify("transposition", "running", None)
-    reference_values, user_values, evidence_confidence, evidence_indices = (
-        aligned_pitch_evidence(
-            np.asarray(reference_pitch.smoothed_midi),
-            np.asarray(user_pitch.smoothed_midi),
-            np.asarray(reference_pitch.voicing_probability),
-            np.asarray(user_pitch.voicing_probability),
-            np.asarray(alignment.reference_indices),
-            np.asarray(alignment.user_indices),
-            config.voicing_threshold,
-        )
+    reference_values, user_values, evidence_confidence, evidence_indices = aligned_pitch_evidence(
+        np.asarray(reference_pitch.smoothed_midi),
+        np.asarray(user_pitch.smoothed_midi),
+        np.asarray(reference_pitch.voicing_probability),
+        np.asarray(user_pitch.voicing_probability),
+        np.asarray(alignment.reference_indices),
+        np.asarray(alignment.user_indices),
+        config.voicing_threshold,
     )
-    transposition = detect_transposition(
-        reference_values, user_values, evidence_confidence
-    )
+    transposition = detect_transposition(reference_values, user_values, evidence_confidence)
     notify("transposition", "completed", asdict(transposition))
     notify("scoring", "running", None)
     scoring = build_scoring_modes(
@@ -353,12 +407,8 @@ def analyze_take(
             "pitch_latency_confidence": pitch_latency_confidence,
             "energy_latency_seconds": energy_latency,
             "energy_latency_confidence": energy_latency_confidence,
-            "latency_candidate_disagreement_seconds": abs(
-                pitch_latency - energy_latency
-            ),
-            "total_user_offset_seconds": (
-                alignment.global_offset_seconds + microphone_latency
-            ),
+            "latency_candidate_disagreement_seconds": abs(pitch_latency - energy_latency),
+            "total_user_offset_seconds": (alignment.global_offset_seconds + microphone_latency),
             "local_confidence": alignment.confidence,
             "matched_coverage": matched_coverage,
             "confidence": alignment_confidence,
@@ -372,9 +422,9 @@ def analyze_take(
         "warnings": list(baseline_artifact.get("warnings", [])),
         "reference_processing": {
             "engine": baseline_artifact.get("separation_engine", "unknown"),
+            "pitch_engine": reference_pitch.tracker,
             "confidence": baseline_artifact.get("reference_confidence", 0.0),
-            "provisional": float(baseline_artifact.get("reference_confidence", 0.0))
-            < 0.6,
+            "provisional": float(baseline_artifact.get("reference_confidence", 0.0)) < 0.6,
         },
         "cache_events": cache_events,
     }
@@ -442,21 +492,31 @@ def _pitch_cached(
     settings: PitchSettings,
     cache_events: list[dict[str, str]],
 ) -> Path:
+    engine = TorchCrepePitchEngine()
     key = CacheKey(
         stage,
         {"audio": file_hash(audio_path)},
         asdict(settings),
-        settings.engine,
+        engine.name,
     )
     output = cache.path(key, ".npz")
     if cache.is_hit(key, [output]):
         cache_events.append({"stage": stage, "status": "hit"})
         return output
-    track = track_file(audio_path, settings)
+    track = track_file(audio_path, settings, engine)
     save_pitch_track(output, track, settings)
     cache.record(key, [output], {"tracker": track.tracker})
     cache_events.append({"stage": stage, "status": "miss"})
     return output
+
+
+def _baseline_pitch_compatible(baseline: dict[str, Any], settings: PitchSettings) -> bool:
+    artifact = json.loads(baseline["artifact_json"])
+    stored_settings = artifact.get("pitch_settings", {})
+    pitch_path = Path(artifact.get("reference_pitch", ""))
+    if stored_settings.get("engine") != settings.engine or not pitch_path.exists():
+        return False
+    return load_pitch_track(pitch_path).tracker.startswith(f"{settings.engine}-")
 
 
 def _separate_cached(
@@ -546,19 +606,14 @@ def _prior_take_comparison(
         (index for index, take in enumerate(takes) if take["id"] == current_take_id),
         len(takes),
     )
-    analyzed = [
-        take
-        for take in takes[:current_position]
-        if take.get("analysis_json")
-    ]
+    analyzed = [take for take in takes[:current_position] if take.get("analysis_json")]
     if not analyzed:
         return None
     previous = analyzed[-1]
     previous_analysis = json.loads(previous["analysis_json"])
     previous_scoring = previous_analysis.get("scoring", {})
-    use_adjusted = (
-        bool(current_scoring.get("transposition_reliable"))
-        and bool(previous_scoring.get("transposition_reliable"))
+    use_adjusted = bool(current_scoring.get("transposition_reliable")) and bool(
+        previous_scoring.get("transposition_reliable")
     )
     mode = "transposition_adjusted" if use_adjusted else "original_pitch"
     current_metrics = current_scoring.get("modes", {}).get(mode, {}).get("metrics", {})
@@ -569,9 +624,7 @@ def _prior_take_comparison(
         return None
     delta = float(current_value) - float(prior_value)
     label = (
-        "Key-adjusted median pitch error"
-        if use_adjusted
-        else "Original-pitch median frame error"
+        "Key-adjusted median pitch error" if use_adjusted else "Original-pitch median frame error"
     )
     return {
         "take_id": previous["id"],

@@ -41,12 +41,16 @@ detected result; an integer from -12 through +12 applies a temporary manual key.
 The endpoint does not mutate the take, baseline, source recording, or expensive
 cache artifacts.
 
-`GET /api/capabilities` reports Demucs installation, compatible version, model,
-device-selection behavior, download uncertainty, storage information, the exact
-installation command, and silent-download policy.
+`GET /api/capabilities` reports both model boundaries. `demucs` includes
+installation, compatible version, model, device-selection behavior, download
+uncertainty, storage information, the exact installation command, and
+silent-download policy. `pitch` reports the pinned TorchCREPE version, full model,
+Viterbi decoder, CPU/CUDA device, exact installation command, and the absence of a
+silent fallback.
 
 The playback-offset endpoint accepts only -2.0 to +2.0 seconds and stores the value
 on that take. It is a playback-only diagnostic and never changes analysis results.
 
 Baseline note boundaries remain exact JSON records. Each baseline version includes
-separation provenance and a decimated reference-pitch preview for A/B comparison.
+separation and pitch provenance plus a decimated reference-pitch preview for A/B
+comparison.

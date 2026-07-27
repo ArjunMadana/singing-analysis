@@ -11,7 +11,9 @@ shifts, timeline clicks and loop drags are distinct, and active reference proven
 is visually separate from the next rebuild method. Synchronization and playback now
 use timestamp shifts only: one song-start offset and one microphone-device latency,
 with every source kept at 1.0x. The remaining listening check requires a
-controllable browser/audio session.
+controllable browser/audio session. Pitch tracking now has one production path:
+TorchCREPE 0.0.24 full model with Viterbi decoding and explicit capability
+reporting.
 
 ## Implemented
 
@@ -62,10 +64,14 @@ controllable browser/audio session.
 - One-to-one shared-span alignment for unequal recording lengths and
   mode-consistent waveform timestamp shifts
 - Original-pitch frame error labeled separately from detected key difference
+- TorchCREPE 0.0.24 full-model pitch tracking on CUDA when available, whole-track
+  Viterbi decoding, periodicity confidence, and centered RMS silence gating
+- Explicit pitch capability/install status with no autocorrelation or pYIN fallback
+- Immutable migration of legacy baselines by re-pitching their preserved vocal stem
+  without rerunning separation
 
 ## Degraded behavior
 
-- The deterministic autocorrelation tracker remains the active pitch engine.
 - Similar original-pitch medians can be dominated by a shared octave-tracking
   displacement. The Test evidence contains incompatible clusters near both 0 and
   -12 semitones, so this frame statistic is not a key detector or a sufficient
@@ -91,7 +97,6 @@ controllable browser/audio session.
   assumes one constant song-start shift and one constant device latency
 - Advanced note attacks/settling, interval, timing, vibrato, and repeatability
   taxonomy beyond measurements currently produced by the backend
-- TorchCREPE/pYIN adapters and model-management UI
 - Final private OBS listening validation in an attached browser
 
 ## Verified state
@@ -102,23 +107,13 @@ controllable browser/audio session.
 - A bounded launch check returned HTTP 200 from both the local API and UI.
 - A synthetic microphone delayed by approximately one second was corrected before
   pitch comparison, and its loop range mapped to the delayed take timeline.
-- Vienna source recordings remain unmodified, and baseline versions 1-10 remain
-  available. The current take-1 analysis uses Demucs baseline v8; take 2 uses the
-  new full-length Demucs baseline v10.
-- Its former -6-semitone result was rejected as an unsupported midpoint. The
-  strongest candidate is 0 st at 18.7% support, runner-up -12 st, with only a
-  4.5-point support margin, so detection is correctly marked uncertain.
-- Vienna mode results: original-pitch median absolute difference 1163.6 cents;
-  octave-invariant median error 78.6 cents with median placement one octave below;
-  interval median error 70.1 cents and contour-direction agreement 61.5% across 403
-  detected transitions. The single stored discrepancy requests manual key selection
-  rather than emitting misleading note scores.
-- The two Test takes have distinct source, extracted-audio, and user-pitch hashes.
-  Their user tracks contain 7,537 versus 7,235 voiced frames and have only 0.18
-  aligned correlation, ruling out stale artifact reuse.
-- Their raw tracked-pitch medians differ by approximately 69.8 cents, confirming
-  that take 2 changed. The formerly identical displayed tolerance percentage was
-  rounding: 7.958% and 7.587% are now shown as 8.0% and 7.6%.
+- Vienna source recordings remain unmodified, and baseline versions 1-11 remain
+  available. Baseline v11 re-pitches v10's preserved full-length Demucs vocal stem
+  with TorchCREPE; no separation rerun occurred.
+- Both Vienna takes now use baseline v11 and TorchCREPE. Take 1 reports 1262.3 cents
+  across 559 aligned voiced frames and a -12-semitone candidate at 34.0% support.
+  Take 2 reports 1186.4 cents across 295 frames and -12 semitones at 43.4% support.
+  Neither candidate is reliable, so key-adjusted scoring remains gated.
 - The newest Test take has a +1.06-second system-reference offset and approximately
   +0.28-second microphone latency. Both Test takes were reanalyzed with the
   `constant-offset` profile. Local warping has been removed; analysis and playback
@@ -126,3 +121,13 @@ controllable browser/audio session.
 - Vienna take 2 was rebuilt as preserved baseline v10 with
   Demucs 4.1.0/htdemucs/CUDA. Its full 101.94-second canonical mapping advances
   one-to-one at 1.0x.
+- TorchCREPE 0.0.24 is installed locally and selects the full model, Viterbi
+  decoder, and CUDA device. Synthetic A4 and silence checks pass without invoking
+  TorchCREPE's slow librosa/Numba silence path.
+- The Test baseline was migrated from v3 to v4 using its preserved Demucs vocal
+  stem. No separation rerun occurred. Both takes now use the same TorchCREPE
+  tracker: take 1 reports 1185.2 cents across 296 aligned voiced frames and take 2
+  reports 1197.3 cents across 1,136 frames.
+- The Test takes no longer report an identical support value: their strongest
+  -12-semitone candidates have 43.8% and 40.5% support. Both remain below the
+  reliability gate, so the UI correctly treats the detected key as uncertain.

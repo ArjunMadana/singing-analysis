@@ -15,13 +15,22 @@ The cache dependency graph mirrors that flow. A scoring tolerance change therefo
 does not invalidate extraction or pitch, while a tracker change invalidates its
 downstream alignment and scoring.
 
+Pitch cache keys include the full algorithm configuration and actual CPU/CUDA
+device. There is no pYIN or autocorrelation fallback. The capability API and import
+dialog expose whether the pinned model is available, and analysis fails visibly
+when it is not. When an active baseline predates TorchCREPE, the pipeline reuses its
+preserved vocal stem, writes a new TorchCREPE pitch artifact and note segmentation,
+and activates that as a new immutable baseline version without rerunning separation.
+
 Interfaces are replaceable at the expensive/model-dependent boundaries:
 
 - FFmpeg performs media decode and deterministic stream extraction.
 - `Separator` supports Demucs when installed and an explicit contaminated-reference
   fallback when it is not.
-- `PitchEngine` initially uses a deterministic autocorrelation implementation and
-  retains raw, corrected, and smoothed contours.
+- `PitchEngine` uses TorchCREPE 0.0.24's full model and Viterbi temporal decoding,
+  and retains raw, thresholded, and smoothed contours. A centered RMS silence gate
+  avoids TorchCREPE's librosa/Numba import path on Windows while preserving neural
+  inference, periodicity, and Viterbi decoding.
 - Alignment uses global energy-envelope correlation followed by a one-to-one
   shared-span mapping. It never performs local time warping.
 

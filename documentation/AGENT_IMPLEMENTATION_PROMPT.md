@@ -446,8 +446,8 @@ Use a pluggable interface.
 
 Preferred initial engines:
 
-* TorchCREPE or CREPE as primary
-* pYIN as fallback and diagnostic comparison
+* TorchCREPE 0.0.24 full model as the only production tracker
+* No silent pitch-tracker fallback
 
 Default vocal range:
 
@@ -790,7 +790,7 @@ Recommended backend:
 * SciPy
 * librosa
 * PyTorch
-* TorchCREPE or CREPE
+* TorchCREPE 0.0.24
 * Demucs
 * FFmpeg
 * FFprobe
@@ -1158,8 +1158,8 @@ Follow this order unless repository constraints require a documented adjustment.
 ## Milestone 3: Pitch pipeline
 
 * Pitch-engine interface
-* pYIN baseline implementation
-* TorchCREPE implementation when environment permits
+* TorchCREPE full-model implementation with explicit capability reporting
+* Legacy baseline migration without rerunning preserved source separation
 * Voicing
 * Confidence
 * Smoothing

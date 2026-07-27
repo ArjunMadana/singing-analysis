@@ -7,12 +7,11 @@ Last updated: 2026-07-26
 Executed:
 
 ```powershell
-$env:PYTHONPATH = (Resolve-Path 'src').Path
 python -m compileall -q src tests
-python -m unittest discover -s tests -v
+python -m pytest
 ```
 
-Result: **40 tests passed**.
+Result: **38 tests passed**.
 
 Coverage includes:
 
@@ -224,6 +223,33 @@ The package/version/source check used the official
 [Demucs PyPI page](https://pypi.org/project/demucs/) and
 [adefossez/demucs repository](https://github.com/adefossez/demucs).
 
+## TorchCREPE
+
+- Installed locally: **yes, 0.0.24**
+- Configured model: full
+- Decoder: whole-track Viterbi
+- Device: CUDA on the current host, otherwise explicit CPU
+- Silence handling: centered 1,024-sample RMS gate at -60 dBFS
+- Periodicity handling: median-3 filter and 0.21 contour threshold
+- Silent fallback: none
+
+The centered RMS gate replaces only TorchCREPE's built-in silence helper. That
+helper lazily imports librosa and caused a multi-minute Numba cache scan in this
+Windows/OneDrive environment. Neural inference, model periodicity, pitch-bin
+conversion, and Viterbi decoding remain TorchCREPE-based.
+
+The Test project was reanalyzed on the production path. Baseline v3's preserved
+Demucs vocal stem was re-pitched and activated as immutable baseline v4; separation
+was not rerun. Take 1 then reported a -12-semitone candidate with 43.8% support and
+take 2 reported 40.5%. Their original-pitch medians are 1185.2 and 1197.3 cents,
+respectively. Both detections remain unreliable rather than being promoted to a
+confident key claim.
+
+Vienna was migrated the same way from baseline v10 to v11. Take 1 reports a
+1262.3-cent original-pitch median and 34.0% support for -12 semitones; take 2
+reports 1186.4 cents and 43.4%. Both remain below the reliability gate. All source
+recordings and baseline versions 1-10 remain unchanged.
+
 ## Limitations of verification
 
 - The private recording was present in ignored project storage and was used only
@@ -231,5 +257,6 @@ The package/version/source check used the official
 - Browser-control infrastructure reported no available browser. No claim is made
   for visually exercising the new scoring controls, seeking/loop gestures,
   listening, audio-device behavior, 20 audible loops, or manual calibration.
-- Python Ruff/mypy were not installed locally. CI declares them; local Python
-  verification used compilation, unittest, line checks, and `git diff --check`.
+- Ruff passes on every Python file changed for TorchCREPE. Full-repository Ruff and
+  mypy still report pre-existing cleanup work outside this change; neither is
+  claimed as globally clean.

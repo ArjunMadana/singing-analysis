@@ -50,9 +50,11 @@ class PitchSettings:
     hop_seconds: float = 0.01
     frame_seconds: float = 0.04
     min_hz: float = 65.406
-    max_hz: float = 2_093.005
+    max_hz: float = 2_006.0
     voicing_threshold: float = 0.35
-    engine: str = "autocorrelation-v1"
+    engine: str = (
+        "torchcrepe-0.0.24-full-viterbi-p0.21-centered-rms-60db-median3-mean3-scipy-polyphase-v1"
+    )
 
 
 @dataclass(frozen=True)

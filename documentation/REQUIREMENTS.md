@@ -20,8 +20,11 @@ Last updated: 2026-07-26
 10. Feedback states acoustic measurements and confidence; it does not diagnose vocal
     technique or health.
 11. Reports are local static artifacts and do not upload or redistribute audio.
-12. Missing optional models cause a visible degraded-mode warning, not a false claim
-    that separation or neural pitch analysis occurred.
+12. Missing optional separation models cause a visible degraded-mode warning, not
+    a false claim that neural separation occurred. Pitch analysis has one supported
+    implementation: TorchCREPE 0.0.24 full model with Viterbi decoding. If it is
+    unavailable or incompatible, analysis must stop with the exact install command;
+    it must never silently substitute another tracker.
 
 ## Current milestone definition
 
@@ -68,6 +71,9 @@ The integrated local browser application must preserve the Phase 1 boundary and:
     through the measured system-reference and microphone offsets while keeping both
     sources at exactly 1.0x. No variable-rate playback mode is permitted. Waveforms
     must use the same active timestamp offsets as the audio and pitch.
+19. Reference and user contours in one analysis must use the same TorchCREPE
+    algorithm. Activating a legacy baseline must create a new immutable baseline
+    version by re-pitching its preserved vocal artifact before scoring.
 
 Desktop packaging and an advanced direct-manipulation piano roll remain later
 milestones.

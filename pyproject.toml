@@ -17,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
-models = ["demucs==4.1.0"]
+models = ["demucs==4.1.0", "torchcrepe==0.0.24"]
 
 [project.scripts]
 vocallab = "vocallab.cli:main"

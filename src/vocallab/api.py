@@ -16,6 +16,7 @@ from vocallab.errors import VocalLabError
 from vocallab.jobs import Job, JobManager
 from vocallab.models import TranspositionResult
 from vocallab.pipeline import AnalysisConfig, analyze_take
+from vocallab.pitch import torchcrepe_capability
 from vocallab.practice import build_practice_targets
 from vocallab.scoring import (
     aligned_pitch_evidence,
@@ -91,7 +92,10 @@ def create_app(library_root: Path | None = None) -> FastAPI:
 
     @app.get("/api/capabilities")
     def capabilities() -> dict[str, Any]:
-        return {"demucs": demucs_capability()}
+        return {
+            "demucs": demucs_capability(),
+            "pitch": torchcrepe_capability(),
+        }
 
     @app.get("/api/projects")
     def projects() -> list[dict[str, Any]]:
@@ -114,9 +118,7 @@ def create_app(library_root: Path | None = None) -> FastAPI:
         return summary
 
     @app.delete("/api/projects/{project_id}")
-    def delete_project(
-        project_id: str, request: DeleteProjectRequest
-    ) -> dict[str, bool]:
+    def delete_project(project_id: str, request: DeleteProjectRequest) -> dict[str, bool]:
         library.delete_project(project_id, request.confirmation)
         return {"deleted": True}
 
@@ -162,9 +164,7 @@ def create_app(library_root: Path | None = None) -> FastAPI:
         return _take_payload(library.project(project_id).get_take(take_id))
 
     @app.post("/api/projects/{project_id}/takes/{take_id}/analyze", status_code=202)
-    def analyze(
-        project_id: str, take_id: str, request: AnalyzeRequest
-    ) -> dict[str, str]:
+    def analyze(project_id: str, take_id: str, request: AnalyzeRequest) -> dict[str, str]:
         store = library.project(project_id)
         store.get_take(take_id)
         config = AnalysisConfig(
@@ -213,10 +213,7 @@ def create_app(library_root: Path | None = None) -> FastAPI:
             artifacts["alignment"],
         )
         baseline_row = store.get_baseline(analysis["baseline_id"])
-        notes = [
-            _note_event(item)
-            for item in json.loads(baseline_row["artifact_json"])["notes"]
-        ]
+        notes = [_note_event(item) for item in json.loads(baseline_row["artifact_json"])["notes"]]
         discrepancies = _map_discrepancy_loops(
             analysis.get("discrepancies", []),
             artifacts["reference_pitch"],
@@ -243,9 +240,7 @@ def create_app(library_root: Path | None = None) -> FastAPI:
             ),
             "transport": {
                 "mapping": mapping,
-                "manual_offset_seconds": float(
-                    row.get("playback_offset_seconds") or 0.0
-                ),
+                "manual_offset_seconds": float(row.get("playback_offset_seconds") or 0.0),
                 "diagnostics": {
                     "system_reference_offset_seconds": analysis["alignment"].get(
                         "global_offset_seconds", 0.0
@@ -271,15 +266,11 @@ def create_app(library_root: Path | None = None) -> FastAPI:
                     "energy_latency_confidence": analysis["alignment"].get(
                         "energy_latency_confidence", 0.0
                     ),
-                    "latency_candidate_disagreement_seconds": analysis[
-                        "alignment"
-                    ].get("latency_candidate_disagreement_seconds", 0.0),
-                    "matched_coverage": analysis["alignment"].get(
-                        "matched_coverage", 0.0
+                    "latency_candidate_disagreement_seconds": analysis["alignment"].get(
+                        "latency_candidate_disagreement_seconds", 0.0
                     ),
-                    "alignment_confidence": analysis["alignment"].get(
-                        "confidence", 0.0
-                    ),
+                    "matched_coverage": analysis["alignment"].get("matched_coverage", 0.0),
+                    "alignment_confidence": analysis["alignment"].get("confidence", 0.0),
                 },
             },
         }
@@ -304,16 +295,14 @@ def create_app(library_root: Path | None = None) -> FastAPI:
             reference_indices = np.asarray(alignment["reference_indices"], dtype=int)
             user_indices = np.asarray(alignment["user_indices"], dtype=int)
         threshold = float(analysis.get("settings", {}).get("voicing_threshold", 0.35))
-        reference_values, user_values, confidence, evidence_indices = (
-            aligned_pitch_evidence(
-                np.asarray(reference_track.smoothed_midi),
-                np.asarray(user_track.smoothed_midi),
-                np.asarray(reference_track.voicing_probability),
-                np.asarray(user_track.voicing_probability),
-                reference_indices,
-                user_indices,
-                threshold,
-            )
+        reference_values, user_values, confidence, evidence_indices = aligned_pitch_evidence(
+            np.asarray(reference_track.smoothed_midi),
+            np.asarray(user_track.smoothed_midi),
+            np.asarray(reference_track.voicing_probability),
+            np.asarray(user_track.voicing_probability),
+            reference_indices,
+            user_indices,
+            threshold,
         )
         detected = TranspositionResult(**analysis["transposition"])
         scoring_payload = build_scoring_modes(
@@ -329,9 +318,7 @@ def create_app(library_root: Path | None = None) -> FastAPI:
             best_shift=scoring_shift,
             reliable=bool(scoring_payload["transposition_reliable"]),
         )
-        baseline = json.loads(
-            store.get_baseline(analysis["baseline_id"])["artifact_json"]
-        )
+        baseline = json.loads(store.get_baseline(analysis["baseline_id"])["artifact_json"])
         notes = [_note_event(item) for item in baseline["notes"]]
         discrepancy_items = build_discrepancies(
             notes,
@@ -381,10 +368,7 @@ def create_app(library_root: Path | None = None) -> FastAPI:
             "id": active["id"],
             "version": active["version"],
             "notes": artifact["notes"],
-            "versions": [
-                _baseline_version_payload(item)
-                for item in store.list_baselines()
-            ],
+            "versions": [_baseline_version_payload(item) for item in store.list_baselines()],
         }
 
     @app.post("/api/projects/{project_id}/baseline/{baseline_id}/activate")
@@ -393,9 +377,7 @@ def create_app(library_root: Path | None = None) -> FastAPI:
         return {"id": activated["id"], "version": activated["version"]}
 
     @app.post("/api/projects/{project_id}/baseline/versions", status_code=201)
-    def baseline_version(
-        project_id: str, request: BaselineVersionRequest
-    ) -> dict[str, Any]:
+    def baseline_version(project_id: str, request: BaselineVersionRequest) -> dict[str, Any]:
         return library.save_baseline_version(project_id, request.notes, request.take_id)
 
     @app.get("/api/projects/{project_id}/compare")
@@ -446,9 +428,7 @@ def _take_payload(take: dict[str, Any]) -> dict[str, Any]:
         "status": take["status"],
         "microphone_stream": take["mic_stream"],
         "reference_stream": take["reference_stream"],
-        "playback_offset_seconds": float(
-            take.get("playback_offset_seconds") or 0.0
-        ),
+        "playback_offset_seconds": float(take.get("playback_offset_seconds") or 0.0),
         "analysis": analysis,
     }
 
@@ -483,6 +463,10 @@ def _baseline_version_payload(row: dict[str, Any]) -> dict[str, Any]:
         "active": bool(row["active"]),
         "created_at": row["created_at"],
         "engine": artifact.get("separation_engine", "unknown"),
+        "pitch_engine": artifact.get(
+            "pitch_tracker",
+            artifact.get("pitch_settings", {}).get("engine", "unknown"),
+        ),
         "reference_confidence": artifact.get("reference_confidence", 0.0),
         "pitch_preview": preview,
     }
@@ -514,9 +498,7 @@ def _map_discrepancy_loops(
         reference_indices = np.clip(
             alignment["reference_indices"], 0, len(reference.time_seconds) - 1
         )
-        user_indices = np.clip(
-            alignment["user_indices"], 0, len(user.time_seconds) - 1
-        )
+        user_indices = np.clip(alignment["user_indices"], 0, len(user.time_seconds) - 1)
     reference_times = np.asarray(reference.time_seconds)[reference_indices]
     user_times = np.asarray(user.time_seconds)[user_indices]
     mapped: list[dict[str, Any]] = []

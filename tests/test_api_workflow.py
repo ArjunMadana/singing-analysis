@@ -1,3 +1,4 @@
+import json
 import shutil
 import subprocess
 import tempfile
@@ -8,6 +9,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from vocallab.api import create_app
+from vocallab.project import ProjectStore
 
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg unavailable")
@@ -48,7 +50,7 @@ class ApiWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 202)
         job_id = response.json()["job_id"]
-        for _ in range(100):
+        for _ in range(600):
             job = client.get(f"/api/jobs/{job_id}").json()
             if job["status"] in {"completed", "failed"}:
                 self.assertEqual(job["status"], "completed", job.get("error"))
@@ -56,9 +58,7 @@ class ApiWorkflowTests(unittest.TestCase):
             time.sleep(0.05)
         self.fail("Analysis job did not finish.")
 
-    def _import(
-        self, client: TestClient, project_id: str, recording: Path
-    ) -> str:
+    def _import(self, client: TestClient, project_id: str, recording: Path) -> str:
         inspected = client.post(
             f"/api/recordings/inspect?filename={recording.name}",
             content=recording.read_bytes(),
@@ -83,9 +83,13 @@ class ApiWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with TestClient(create_app(root / "library")) as client:
-                capability = client.get("/api/capabilities").json()["demucs"]
+                capabilities = client.get("/api/capabilities").json()
+                capability = capabilities["demucs"]
                 self.assertEqual(capability["model"], "htdemucs")
                 self.assertFalse(capability["automatic_download"])
+                self.assertEqual(capabilities["pitch"]["model"], "full")
+                self.assertEqual(capabilities["pitch"]["decoder"], "viterbi")
+                self.assertFalse(capabilities["pitch"]["silent_fallback"])
                 created = client.post(
                     "/api/projects",
                     json={"title": "Synthetic", "artist": "Fixture"},
@@ -111,24 +115,14 @@ class ApiWorkflowTests(unittest.TestCase):
                 first_job = self._analyze(client, project_id, first_take)
                 self.assertFalse(first_job["result"]["baseline_reused"])
 
-                take_payload = client.get(
-                    f"/api/projects/{project_id}/takes/{first_take}"
-                ).json()
-                self.assertEqual(
-                    take_payload["analysis"]["transposition"]["best_shift"], 1
-                )
-                view = client.get(
-                    f"/api/projects/{project_id}/takes/{first_take}/visualization"
-                )
+                take_payload = client.get(f"/api/projects/{project_id}/takes/{first_take}").json()
+                self.assertEqual(take_payload["analysis"]["transposition"]["best_shift"], 1)
+                view = client.get(f"/api/projects/{project_id}/takes/{first_take}/visualization")
                 self.assertEqual(view.status_code, 200, view.text)
                 self.assertTrue(view.json()["pitch"]["time"])
-                self.assertTrue(
-                    view.json()["transport"]["mapping"]["canonical_time"]
-                )
+                self.assertTrue(view.json()["transport"]["mapping"]["canonical_time"])
                 self.assertAlmostEqual(
-                    view.json()["transport"]["diagnostics"][
-                        "system_reference_offset_seconds"
-                    ],
+                    view.json()["transport"]["diagnostics"]["system_reference_offset_seconds"],
                     0.0,
                 )
                 self.assertIn("practice_targets", view.json())
@@ -138,16 +132,12 @@ class ApiWorkflowTests(unittest.TestCase):
                     params={"shift": 0},
                 )
                 self.assertEqual(manual_scoring.status_code, 200, manual_scoring.text)
-                self.assertEqual(
-                    manual_scoring.json()["scoring"]["shift_source"], "manual"
-                )
-                self.assertEqual(
-                    manual_scoring.json()["scoring"]["selected_shift"], 0
-                )
+                self.assertEqual(manual_scoring.json()["scoring"]["shift_source"], "manual")
+                self.assertEqual(manual_scoring.json()["scoring"]["selected_shift"], 0)
                 self.assertIn("practice_targets", manual_scoring.json())
-                after_scoring = client.get(
-                    f"/api/projects/{project_id}/takes/{first_take}"
-                ).json()["analysis"]
+                after_scoring = client.get(f"/api/projects/{project_id}/takes/{first_take}").json()[
+                    "analysis"
+                ]
                 self.assertEqual(before_scoring, after_scoring)
                 saved_offset = client.put(
                     f"/api/projects/{project_id}/takes/{first_take}/playback-offset",
@@ -155,14 +145,12 @@ class ApiWorkflowTests(unittest.TestCase):
                 )
                 self.assertEqual(saved_offset.status_code, 200)
                 self.assertAlmostEqual(
-                    client.get(
-                        f"/api/projects/{project_id}/takes/{first_take}"
-                    ).json()["playback_offset_seconds"],
+                    client.get(f"/api/projects/{project_id}/takes/{first_take}").json()[
+                        "playback_offset_seconds"
+                    ],
                     0.61,
                 )
-                audio = client.get(
-                    f"/api/projects/{project_id}/takes/{first_take}/audio/user"
-                )
+                audio = client.get(f"/api/projects/{project_id}/takes/{first_take}/audio/user")
                 self.assertEqual(audio.status_code, 200)
                 self.assertEqual(
                     client.get(
@@ -174,9 +162,7 @@ class ApiWorkflowTests(unittest.TestCase):
                 baseline = client.get(f"/api/projects/{project_id}/baseline").json()
                 notes = baseline["notes"]
                 self.assertTrue(baseline["versions"][0]["pitch_preview"]["time"])
-                self.assertEqual(
-                    baseline["versions"][0]["engine"], "reference-mix-fallback-v1"
-                )
+                self.assertEqual(baseline["versions"][0]["engine"], "reference-mix-fallback-v1")
                 notes[0]["midi_pitch"] += 1
                 version = client.post(
                     f"/api/projects/{project_id}/baseline/versions",
@@ -184,32 +170,40 @@ class ApiWorkflowTests(unittest.TestCase):
                 )
                 self.assertEqual(version.status_code, 201, version.text)
                 self.assertEqual(version.json()["version"], 2)
-                versions = client.get(f"/api/projects/{project_id}/baseline").json()[
-                    "versions"
-                ]
+                versions = client.get(f"/api/projects/{project_id}/baseline").json()["versions"]
                 activated = client.post(
                     f"/api/projects/{project_id}/baseline/{versions[0]['id']}/activate"
                 )
                 self.assertEqual(activated.json()["version"], 1)
-                client.post(
-                    f"/api/projects/{project_id}/baseline/{versions[1]['id']}/activate"
-                )
+                client.post(f"/api/projects/{project_id}/baseline/{versions[1]['id']}/activate")
+                store = ProjectStore.open(root / "library" / project_id)
+                active_baseline = store.active_baseline()
+                self.assertIsNotNone(active_baseline)
+                assert active_baseline is not None
+                legacy_artifact = json.loads(active_baseline["artifact_json"])
+                legacy_artifact["pitch_settings"]["engine"] = "autocorrelation-v1"
+                with store.transaction() as connection:
+                    connection.execute(
+                        "UPDATE baseline SET artifact_json = ? WHERE id = ?",
+                        (
+                            json.dumps(legacy_artifact, sort_keys=True),
+                            active_baseline["id"],
+                        ),
+                    )
                 rerun = self._analyze(client, project_id, first_take)
                 stages = rerun["details"]
-                self.assertEqual(
-                    stages["reference_preparation"]["baseline_version"], 2
+                self.assertFalse(rerun["result"]["baseline_reused"])
+                migrated = client.get(f"/api/projects/{project_id}/baseline").json()
+                self.assertEqual(migrated["versions"][-1]["version"], 3)
+                self.assertIn(
+                    "torchcrepe-0.0.24-full",
+                    migrated["versions"][-1]["pitch_engine"],
                 )
                 cache_events = stages["pitch_tracking"]["cache_events"]
-                self.assertIn(
-                    {"stage": "extract-microphone", "status": "hit"}, cache_events
-                )
-                self.assertIn(
-                    {"stage": "extract-reference", "status": "hit"}, cache_events
-                )
+                self.assertIn({"stage": "extract-microphone", "status": "hit"}, cache_events)
+                self.assertIn({"stage": "extract-reference", "status": "hit"}, cache_events)
                 self.assertIn({"stage": "pitch-user", "status": "hit"}, cache_events)
-                self.assertNotIn(
-                    {"stage": "separate", "status": "miss"}, cache_events
-                )
+                self.assertNotIn({"stage": "separate", "status": "miss"}, cache_events)
 
                 second_recording = root / "second.mkv"
                 self._recording(second_recording, 440)
@@ -222,9 +216,7 @@ class ApiWorkflowTests(unittest.TestCase):
                 )
                 self.assertEqual(comparison.status_code, 200, comparison.text)
                 self.assertEqual(comparison.json()["second_take_id"], second_take)
-                self.assertEqual(
-                    comparison.json()["metrics_mode"], "transposition_adjusted"
-                )
+                self.assertEqual(comparison.json()["metrics_mode"], "transposition_adjusted")
                 self.assertTrue(comparison.json()["contours"]["first"]["time"])
 
                 disposable = client.post(

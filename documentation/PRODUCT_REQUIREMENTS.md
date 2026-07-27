@@ -443,10 +443,12 @@ Implement a pluggable pitch-detection interface.
 
 Recommended engines:
 
-* TorchCREPE or CREPE as the primary tracker
-* pYIN as a fallback and diagnostic tracker
+* TorchCREPE 0.0.24 full model as the only production tracker
+* Viterbi temporal decoding and explicit periodicity/silence gating
 
-The system should allow the user to choose a tracker in advanced settings.
+The initial product does not expose tracker choice. If the pinned TorchCREPE
+dependency is unavailable, analysis stops visibly instead of substituting a
+lower-quality tracker.
 
 ## 9.2 Expected vocal range
 
@@ -1094,7 +1096,7 @@ vocal-lab/
 * SciPy
 * librosa
 * PyTorch
-* TorchCREPE or CREPE
+* TorchCREPE 0.0.24
 * Demucs
 * FFmpeg and FFprobe
 * SoundFile

@@ -391,6 +391,12 @@ export function VocalLabApp() {
     refreshReference = false,
   ) => {
     if (!project) return;
+    if (capabilities?.pitch?.compatible === false) {
+      throw new Error(
+        `TorchCREPE ${capabilities.pitch.required_version} is required for analysis. ` +
+        `Install it with: ${capabilities.pitch.install_command}`,
+      );
+    }
     setError("");
     const response = await request<{ job_id: string }>(
       `/api/projects/${project.id}/takes/${takeId}/analyze`,
@@ -559,7 +565,8 @@ export function VocalLabApp() {
             <span className="eyebrow">TAKE READY</span>
             <h2>Build the first analysis</h2>
             <p>VocalLab will prepare the reference, align your microphone track, and preserve every artifact locally.</p>
-            <button className="primary" onClick={() => runAnalysis(take.id).catch((reason) => setError(reason.message))}>Analyze this take</button>
+            <button className="primary" disabled={capabilities?.pitch?.compatible === false} onClick={() => runAnalysis(take.id).catch((reason) => setError(reason.message))}>Analyze this take</button>
+            {capabilities?.pitch?.compatible === false && <code>{capabilities.pitch.install_command}</code>}
           </section>
         )}
 
@@ -602,6 +609,9 @@ export function VocalLabApp() {
                   {take.analysis.reference_processing?.engine ?? "Unknown engine"}
                   {take.analysis.reference_processing?.provisional ? " · provisional scoring" : ""}
                 </strong>
+                <small>
+                  Pitch: {take.analysis.reference_processing?.pitch_engine ?? "legacy tracker"}
+                </small>
                 <small>
                   This provenance describes the reference currently used for scoring.
                 </small>
@@ -1061,7 +1071,88 @@ function ImportDialog({ project, draft, setDraft, close, imported, runAnalysis, 
   };
   const mic = inspection?.streams.find((stream: Stream) => roles[stream.index] === "microphone");
   const reference = inspection?.streams.find((stream: Stream) => roles[stream.index] === "reference");
-  return <div className="modal-backdrop"><div className="modal import-modal"><span className="eyebrow">IMPORT OBS RECORDING</span><h2>{inspection ? "Confirm stream roles" : "Choose a recording"}</h2>{!inspection ? <label className="dropzone"><input type="file" accept=".mkv,.mp4,.mov,.wav,.flac,.mp3,.m4a" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} /><strong>{busy ? "Inspecting locally…" : "Drop or choose a multistream recording"}</strong><small>The source file is never modified.</small></label> : <><div className="stream-list">{inspection.streams.map((stream) => <article key={stream.index}><div><strong>Stream {stream.index}</strong><small>{stream.title || "Untitled"} · {stream.codec} · {stream.channels}ch · {stream.sample_rate} Hz · {stream.duration_seconds?.toFixed(1)}s</small><small>RMS {(20 * Math.log10(Math.max(stream.statistics.rms, 1e-8))).toFixed(1)} dBFS · peak {(stream.statistics.peak * 100).toFixed(0)}%</small></div><audio controls preload="none" src={`${API}${stream.preview_url}`} /><select value={roles[stream.index]} onChange={(event) => setDraft({ ...draft, roles: { ...roles, [stream.index]: event.target.value } })}><option value="microphone">Microphone</option><option value="reference">Reference/system</option><option value="mixed">Mixed</option><option value="ignore">Ignore</option></select></article>)}</div><div className="reference-choice"><label>Reference processing<select value={separatorMode} onChange={(event) => setSeparatorMode(event.target.value)}><option value="fallback">Full mix fallback</option><option value="demucs" disabled={!capabilities?.demucs?.compatible}>Demucs htdemucs</option></select></label><small>{capabilities?.demucs?.installed ? `Installed: Demucs ${capabilities.demucs.version} · ${capabilities.demucs.model}` : "Demucs unavailable; full-mix results will be labeled provisional."}</small>{!capabilities?.demucs?.installed && <code>{capabilities?.demucs?.install_command}</code>}</div></>}<div className="modal-actions">{inspection && <button className="secondary" onClick={() => setDraft(createImportDraft(project.id))}>Choose different recording</button>}<button className="secondary" onClick={close}>Cancel</button>{inspection && <button className="primary" disabled={!validStreamRoles(roles) || (separatorMode === "demucs" && !capabilities?.demucs?.compatible)} onClick={async () => { try { const result = await request<{ take_id: string }>(`/api/projects/${project.id}/takes`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ recording_token: inspection.token, microphone_stream: mic.index, reference_stream: reference.index }) }); await imported(result.take_id); await runAnalysis(result.take_id, separatorMode); } catch (reason: any) { setError(reason.message); } }}>Import & analyze</button>}</div></div></div>;
+  return (
+    <div className="modal-backdrop">
+      <div className="modal import-modal">
+        <span className="eyebrow">IMPORT OBS RECORDING</span>
+        <h2>{inspection ? "Confirm stream roles" : "Choose a recording"}</h2>
+        {!inspection ? (
+          <label className="dropzone">
+            <input
+              type="file"
+              accept=".mkv,.mp4,.mov,.wav,.flac,.mp3,.m4a"
+              onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])}
+            />
+            <strong>{busy ? "Inspecting locally…" : "Drop or choose a multistream recording"}</strong>
+            <small>The source file is never modified.</small>
+          </label>
+        ) : (
+          <>
+            <div className="stream-list">
+              {inspection.streams.map((stream) => (
+                <article key={stream.index}>
+                  <div>
+                    <strong>Stream {stream.index}</strong>
+                    <small>{stream.title || "Untitled"} · {stream.codec} · {stream.channels}ch · {stream.sample_rate} Hz · {stream.duration_seconds?.toFixed(1)}s</small>
+                    <small>RMS {(20 * Math.log10(Math.max(stream.statistics.rms, 1e-8))).toFixed(1)} dBFS · peak {(stream.statistics.peak * 100).toFixed(0)}%</small>
+                  </div>
+                  <audio controls preload="none" src={`${API}${stream.preview_url}`} />
+                  <select value={roles[stream.index]} onChange={(event) => setDraft({ ...draft, roles: { ...roles, [stream.index]: event.target.value } })}>
+                    <option value="microphone">Microphone</option>
+                    <option value="reference">Reference/system</option>
+                    <option value="mixed">Mixed</option>
+                    <option value="ignore">Ignore</option>
+                  </select>
+                </article>
+              ))}
+            </div>
+            <div className="reference-choice">
+              <label>
+                Reference processing
+                <select value={separatorMode} onChange={(event) => setSeparatorMode(event.target.value)}>
+                  <option value="fallback">Full mix fallback</option>
+                  <option value="demucs" disabled={!capabilities?.demucs?.compatible}>Demucs htdemucs</option>
+                </select>
+              </label>
+              <small>{capabilities?.demucs?.installed ? `Installed: Demucs ${capabilities.demucs.version} · ${capabilities.demucs.model}` : "Demucs unavailable; full-mix results will be labeled provisional."}</small>
+              {!capabilities?.demucs?.installed && <code>{capabilities?.demucs?.install_command}</code>}
+              <small>{capabilities?.pitch?.compatible ? `Pitch tracking: TorchCREPE ${capabilities.pitch.model} · ${capabilities.pitch.decoder} · ${capabilities.pitch.device}` : "TorchCREPE is required before analysis can run."}</small>
+              {capabilities?.pitch?.compatible === false && <code>{capabilities.pitch.install_command}</code>}
+            </div>
+          </>
+        )}
+        <div className="modal-actions">
+          {inspection && <button className="secondary" onClick={() => setDraft(createImportDraft(project.id))}>Choose different recording</button>}
+          <button className="secondary" onClick={close}>Cancel</button>
+          {inspection && (
+            <button
+              className="primary"
+              disabled={!validStreamRoles(roles) || capabilities?.pitch?.compatible === false || (separatorMode === "demucs" && !capabilities?.demucs?.compatible)}
+              onClick={async () => {
+                try {
+                  const result = await request<{ take_id: string }>(`/api/projects/${project.id}/takes`, {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                      recording_token: inspection.token,
+                      microphone_stream: mic.index,
+                      reference_stream: reference.index,
+                    }),
+                  });
+                  await imported(result.take_id);
+                  await runAnalysis(result.take_id, separatorMode);
+                } catch (reason: any) {
+                  setError(reason.message);
+                }
+              }}
+            >
+              Import & analyze
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Comparison({ project, takes, onResult }: any) {
