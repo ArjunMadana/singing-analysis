@@ -33,6 +33,8 @@ The integrated local browser application must preserve the Phase 1 boundary and:
    offsets independently through saved alignment evidence.
 4. Stop and recreate source nodes atomically for pause, seek, loop, or target
    changes; partial playback must never be shown as Both.
+   A disposed or superseded transport must never publish late readiness state into
+   the active take.
 5. Anchor repeated loops to an absolute epoch so timing error cannot accumulate.
 6. Store any manual playback calibration per take, only after explicit Save, and
    never use it to change scoring.
@@ -57,6 +59,8 @@ The integrated local browser application must preserve the Phase 1 boundary and:
 16. Scope an inspected recording and its stream-role draft to one project. Opening
     a fresh import or switching projects must show an empty file chooser, and the
     confirmation step must let the user choose a different recording.
+17. Play at or beyond the canonical mapping endpoint must restart from the
+    beginning. The UI must never claim playback while scheduling zero source nodes.
 
 Desktop packaging and an advanced direct-manipulation piano roll remain later
 milestones.

@@ -55,14 +55,24 @@ npm.cmd --prefix apps/web run lint
 ```
 
 `npm test` performs a production Vinext/Vite build and then runs the frontend
-state tests. Result: **21 tests passed**, build passed, and ESLint passed.
+state tests. Result: **23 tests passed**, build passed, and ESLint passed.
 
 The tests cover the earlier state behavior plus shared scheduled starts, source
 readiness, constant and nonlinear mapping, 20 loop epochs without accumulated
 drift, failed-source behavior, mix/gain behavior during playback, pause/resume node
 recreation, rapid target switching, click-to-seek, click-sized loop rejection,
 intentional loop creation, loop-edge adjustment, project-scoped import drafts, and
-clearing an inspected recording to choose another file.
+clearing an inspected recording to choose another file. It also proves that late
+loads from a disposed transport cannot overwrite active readiness and that Play at
+the canonical endpoint rewinds and schedules real source nodes.
+
+The newest local Test take was inspected directly through the API:
+
+- user and reference artifacts are valid mono 48 kHz RIFF/WAV files, each 102.25 s;
+- both audio endpoints return HTTP 200 and the complete 9,816,142-byte file;
+- visualization returns 2,549 canonical/reference/user mapping points spanning
+  approximately 0.02-101.94 s;
+- waveform summaries span the full 102.25-second take.
 
 ## Private take metadata verification
 

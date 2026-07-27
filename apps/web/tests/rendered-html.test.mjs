@@ -312,3 +312,50 @@ test("rapid practice-target switching replaces the active loop atomically", () =
   assert.equal(transport.cursor, 8);
   transport.dispose();
 });
+
+test("disposed transports cannot overwrite readiness after a project switch", async () => {
+  const context = new FakeAudioContext();
+  const responses = [];
+  const emitted = [];
+  const transport = new SharedAudioTransport({
+    createContext: () => context,
+    onState: (state) => emitted.push(state),
+    fetcher: () => new Promise((resolve) => responses.push(resolve)),
+  });
+  const loading = transport.load(
+    { user: "/user.wav", reference: "/reference.wav" },
+    { mapping, mode: "full", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
+  );
+  await Promise.resolve();
+  const emissionCount = emitted.length;
+  transport.dispose();
+  responses.forEach((resolve) => resolve({
+    ok: true,
+    status: 200,
+    async arrayBuffer() { return new ArrayBuffer(8); },
+  }));
+  await loading;
+  assert.equal(emitted.length, emissionCount);
+});
+
+test("play at the canonical end restarts instead of scheduling silence", async () => {
+  const context = new FakeAudioContext();
+  const transport = new SharedAudioTransport({
+    createContext: () => context,
+    fetcher: async () => ({
+      ok: true,
+      status: 200,
+      async arrayBuffer() { return new ArrayBuffer(8); },
+    }),
+  });
+  await transport.load(
+    { user: "/user.wav", reference: "/reference.wav" },
+    { mapping, mode: "full", automaticLatencySeconds: 1, manualOffsetSeconds: 0 },
+  );
+  transport.cursor = mapping.canonical_time.at(-1);
+  await transport.play();
+  assert.equal(transport.anchorCanonical, 0);
+  assert.ok(context.starts.length > 0);
+  transport.pause();
+  transport.dispose();
+});

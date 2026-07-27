@@ -63,6 +63,7 @@ export function mappedWindow(options, start, end) {
 }
 
 export function buildSchedule(options, start, end, startAt) {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return [];
   const boundaries = [start];
   for (let cursor = start + SEGMENT_SECONDS; cursor < end; cursor += SEGMENT_SECONDS) {
     boundaries.push(cursor);
@@ -177,9 +178,13 @@ export class SharedAudioTransport {
     this.nextLoopIteration = 0;
     this.loopTimer = null;
     this.endTimer = null;
+    this.loadGeneration = 0;
+    this.disposed = false;
   }
 
   async load(urls, options) {
+    if (this.disposed) throw new Error("Playback transport has been disposed.");
+    const generation = ++this.loadGeneration;
     this.stopNodes();
     this.options = { ...this.options, ...options };
     this.buffers = {};
@@ -191,11 +196,16 @@ export class SharedAudioTransport {
       ["user", "reference"].map(async (source) => {
         try {
           const response = await this.fetcher(urls[source]);
+          if (this.disposed || generation !== this.loadGeneration) return;
           if (!response.ok) throw new Error(`${source} audio returned HTTP ${response.status}`);
           const bytes = await response.arrayBuffer();
-          this.buffers[source] = await this.context.decodeAudioData(bytes);
+          if (this.disposed || generation !== this.loadGeneration) return;
+          const buffer = await this.context.decodeAudioData(bytes);
+          if (this.disposed || generation !== this.loadGeneration) return;
+          this.buffers[source] = buffer;
           this.readiness[source] = { status: "ready", error: null };
         } catch (error) {
+          if (this.disposed || generation !== this.loadGeneration) return;
           this.readiness[source] = {
             status: "error",
             error: error instanceof Error ? error.message : String(error),
@@ -263,6 +273,13 @@ export class SharedAudioTransport {
       throw new Error(`Playback is waiting for ${missing} audio.`);
     }
     await this.context.resume();
+    const mappingEnd = this.options.mapping.canonical_time.at(-1);
+    if (!Number.isFinite(mappingEnd)) {
+      throw new Error("Playback mapping is empty.");
+    }
+    if (!this.loop && this.cursor >= mappingEnd - 0.001) {
+      this.cursor = 0;
+    }
     this.playing = true;
     this.anchorCanonical = this.cursor;
     this.anchorContext = this.context.currentTime + LOOKAHEAD_SECONDS;
@@ -277,7 +294,7 @@ export class SharedAudioTransport {
         this.nextLoopIteration = 0;
         this.scheduleLoopLookahead();
       } else {
-        const end = this.options.mapping.canonical_time.at(-1) ?? this.cursor;
+        const end = mappingEnd;
         this.scheduleWindow(this.cursor, end, this.anchorContext);
         const remaining = Math.max(0, end - this.cursor);
         this.endTimer = globalThis.setTimeout(
@@ -354,6 +371,7 @@ export class SharedAudioTransport {
       required.has(segment.source),
     );
     const pending = [];
+    const scheduledSources = new Set();
     try {
       for (const segment of schedule) {
         const buffer = this.buffers[segment.source];
@@ -366,6 +384,13 @@ export class SharedAudioTransport {
         node.connect(this.gains[segment.source]);
         node.start(segment.when, sourceStart, sourceEnd - sourceStart);
         pending.push(node);
+        scheduledSources.add(segment.source);
+      }
+      const missing = [...required].filter((source) => !scheduledSources.has(source));
+      if (missing.length) {
+        throw new Error(
+          `No schedulable ${missing.join(" and ")} audio exists at this timeline position.`,
+        );
       }
     } catch (error) {
       for (const node of pending) {
@@ -412,11 +437,17 @@ export class SharedAudioTransport {
   }
 
   emit(error = null) {
+    if (this.disposed) return;
     this.onState(this.state(error));
   }
 
   dispose() {
-    this.pause();
-    this.context.close?.();
+    if (this.disposed) return;
+    this.disposed = true;
+    this.loadGeneration += 1;
+    this.playing = false;
+    this.stopNodes();
+    const closing = this.context.close?.();
+    closing?.catch?.(() => {});
   }
 }

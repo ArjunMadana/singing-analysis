@@ -62,6 +62,13 @@ Pause, seek, loop change, and target change stop and recreate one atomic node se
 Loop iterations are anchored to an absolute epoch, so timer delay does not
 accumulate into audio drift.
 
+Each asynchronous source load carries a transport generation. Project/take changes
+dispose the old generation; any fetch or decode that completes later is ignored and
+cannot overwrite the active transport's readiness. Playback validates that every
+selected source produced schedulable nodes. A cursor at or beyond the canonical
+mapping endpoint rewinds to zero before scheduling, avoiding a false playing state
+with no audio.
+
 Raw discrepancies remain precise analysis measurements. `PracticeTarget`
 construction associates them with baseline notes, groups compatible nearby
 measurements, expands to note/phrase context, adds 0.75 seconds of pre/post roll,

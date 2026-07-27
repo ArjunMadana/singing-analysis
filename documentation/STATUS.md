@@ -57,6 +57,7 @@ because no controllable browser was available in this session.
 - Mode-compatible take comparisons
 - Project-scoped recording-import drafts with fresh-import reset and an explicit
   Choose different recording action
+- Generation-safe asynchronous audio loading and replay-from-end scheduling guards
 
 ## Degraded behavior
 
@@ -87,7 +88,7 @@ because no controllable browser was available in this session.
 ## Verified state
 
 - 37 Python tests pass.
-- 21 frontend transport/state/gesture/import-lifecycle tests pass.
+- 23 frontend transport/state/gesture/import-lifecycle tests pass.
 - Frontend production build and ESLint pass.
 - A bounded launch check returned HTTP 200 from both the local API and UI.
 - A synthetic microphone delayed by approximately one second was corrected before
@@ -103,3 +104,6 @@ because no controllable browser was available in this session.
   interval median error 70.1 cents and contour-direction agreement 61.5% across 403
   detected transitions. The single stored discrepancy requests manual key selection
   rather than emitting misleading note scores.
+- The newest Test take serves both 102.25-second WAV artifacts with valid RIFF
+  headers and HTTP 200 responses; its 2,549-point canonical/reference/user mapping
+  spans the take.
